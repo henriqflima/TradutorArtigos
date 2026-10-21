@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Validação da paginação local</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 28px; color: #18383e; background: #eaf0ec; font: 14px/1.5 Arial, sans-serif; }
+      h1 { margin: 0 0 8px; font-size: 26px; }
+      button { margin: 12px 0; padding: 10px 18px; border: 0; border-radius: 6px; color: white; background: #1c4345; cursor: pointer; }
+      button:disabled { opacity: .5; }
+      #result { max-width: 1100px; padding: 16px; background: white; white-space: pre-wrap; }
+      #previews { display: grid; gap: 24px; }
+      details { padding: 16px; background: #dce5df; border-radius: 8px; }
+      summary { cursor: pointer; font-weight: bold; margin-bottom: 16px; }
+      .fixture-host { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+      .fixture-host section.docx { box-sizing: border-box; width: 600px; min-height: 800px; padding: 60px; margin: 0; background: white; color: black; font: 14px/1.4 Arial, sans-serif; position: relative; }
+      .fixture-host article { margin: 0; padding: 0; }
+      .fixture-host p { margin: 0 0 12px; }
+      .fixture-host img { vertical-align: middle; }
+      .fixture-host .docx_heading1 { font-size: 22px; font-weight: bold; break-after: avoid; }
+      .fixture-host .docx_caption { font-size: 12px; color: #333; }
+      .fixture-host table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 0 0 12px; }
+      .fixture-host td, .fixture-host th { border: 1px solid #345; padding: 7px; font-size: 12px; line-height: 17px; vertical-align: top; }
+      .fixture-host td p, .fixture-host th p { margin: 0; }
+      .fixture-host th { background: #eaf0ec; }
+      .fixture-host .filler { margin: 0; }
+      .case-error { color: #8b2626; white-space: pre-wrap; }
+    </style>
+  </head>
+  <body>
+    <h1>Validação da paginação local</h1>
+    <p>Casos sintéticos de DOM. Nenhuma tradução, chamada à API ou gravação de documento.</p>
+    <button id="run">Verificar paginação e geometria</button>
+    <pre id="result" role="status">Aguardando execução.</pre>
+    <div id="previews"></div>
+    <script type="module" src="./layout-browser.ts"></script>
+  </body>
+</html>
