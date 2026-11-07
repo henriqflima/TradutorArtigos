@@ -1,5 +1,6 @@
 import { requestTranslations } from './translation-transport';
 import { parseTranslationMarkup, type Marker } from './translation-markup';
+import { splitInlineMath, splitMathRuns } from './inline-math';
 import { MAX_PDF_PAGES, SOURCE_LANGUAGES, TARGET_LANGUAGES, TRANSLATION_MODEL, TRANSLATION_PROMPT_VERSION } from './shared';
 import {
   abortIfNeeded, sha256, translatableBlocks,
@@ -42,7 +43,7 @@ function cloneRuns(runs: ContentRun[]): ContentRun[] {
 function serialize(block: DocumentBlock, blockIndex: number, assets: Map<string, DocumentAsset>) {
   const markers = new Map<string, Marker>();
   let ordinal = 0;
-  const body = block.runs.map(run => {
+  const body = splitMathRuns(block.runs).map(run => {
     if (run.type === 'asset') {
       const asset = assets.get(run.assetId);
       if (!asset) fail(`O bloco ${block.id} referencia um objeto inexistente.`);
@@ -52,7 +53,12 @@ function serialize(block: DocumentBlock, blockIndex: number, assets: Map<string,
       markers.set(id, { id, tag, token, assetId: run.assetId });
       return `<${tag} id="${id}">${token}</${tag}>`;
     }
-    let content = escapeXml(run.text);
+    let content: string;
+    if (run.type === 'math') {
+      const id = 'm' + ++ordinal, token = 'LUME_' + id.toUpperCase() + '_PROTECTED';
+      markers.set(id, { id, tag: 'eq', token, mathText: run.text });
+      content = '<eq id="' + id + '">' + token + '</eq>';
+    } else content = escapeXml(run.text);
     if (run.style?.superscript) content = `<sup>${content}</sup>`;
     if (run.style?.italic) content = `<i>${content}</i>`;
     if (run.style?.bold) content = `<b>${content}</b>`;
@@ -77,56 +83,62 @@ function numericIssue(block: DocumentBlock, runs: ContentRun[]): DocumentIssue |
 }
 
 function markerPositionIssue(block: DocumentBlock, runs: ContentRun[]): DocumentIssue | undefined {
-  const touchesLettersOnBothSides = (items: ContentRun[], index: number) => {
+  const sourceRuns = splitMathRuns(block.runs), translatedRuns = splitMathRuns(runs);
+  const markerKey = (run: typeof sourceRuns[number]) => run.type === 'asset' ? `asset:${run.assetId}` :
+    run.type === 'math' ? `math:${run.text}` : undefined;
+  const touchesLettersOnBothSides = (items: typeof sourceRuns, index: number) => {
     let before = '', after = '';
     for (let cursor = index - 1; cursor >= 0; cursor--) {
       const run = items[cursor];
-      if (run.type === 'asset') break;
+      if (run.type !== 'text') break;
       if (run.text) { before = Array.from(run.text).at(-1) || ''; break; }
     }
     for (let cursor = index + 1; cursor < items.length; cursor++) {
       const run = items[cursor];
-      if (run.type === 'asset') break;
+      if (run.type !== 'text') break;
       if (run.text) { after = Array.from(run.text)[0] || ''; break; }
     }
     return /\p{L}/u.test(before) && /\p{L}/u.test(after);
   };
   const sourcePositions = new Map<string, number[]>();
-  block.runs.forEach((run, index) => {
-    if (run.type === 'asset') sourcePositions.set(run.assetId, [...(sourcePositions.get(run.assetId) || []), index]);
+  sourceRuns.forEach((run, index) => {
+    const key = markerKey(run);
+    if (key) sourcePositions.set(key, [...(sourcePositions.get(key) || []), index]);
   });
   const seen = new Map<string, number>();
-  const embeddedInWord = runs.some((run, index) => {
-    if (run.type !== 'asset') return false;
-    const occurrence = seen.get(run.assetId) || 0;
-    seen.set(run.assetId, occurrence + 1);
-    const sourceIndex = sourcePositions.get(run.assetId)?.[occurrence];
-    return sourceIndex !== undefined && !touchesLettersOnBothSides(block.runs, sourceIndex) &&
-      touchesLettersOnBothSides(runs, index);
+  const embeddedInWord = translatedRuns.some((run, index) => {
+    const key = markerKey(run);
+    if (!key) return false;
+    const occurrence = seen.get(key) || 0;
+    seen.set(key, occurrence + 1);
+    const sourceIndex = sourcePositions.get(key)?.[occurrence];
+    return sourceIndex !== undefined && !touchesLettersOnBothSides(sourceRuns, sourceIndex) &&
+      touchesLettersOnBothSides(translatedRuns, index);
   });
 
   const clusters: string[][] = [];
   let cluster: string[] = [];
-  for (const run of block.runs) {
-    if (run.type === 'asset') cluster.push(run.assetId);
-    else if (run.text.trim()) {
+  for (const run of sourceRuns) {
+    const key = markerKey(run);
+    if (key) cluster.push(key);
+    else if (run.type === 'text' && run.text.trim()) {
       if (cluster.length > 1) clusters.push(cluster);
       cluster = [];
     }
   }
   if (cluster.length > 1) clusters.push(cluster);
-  const hasCluster = (assets: string[]) => runs.some((run, index) => {
-    if (run.type !== 'asset' || run.assetId !== assets[0]) return false;
+  const hasCluster = (keys: string[]) => translatedRuns.some((run, index) => {
+    if (markerKey(run) !== keys[0]) return false;
     let cursor = index;
-    for (const id of assets.slice(1)) {
+    for (const key of keys.slice(1)) {
       cursor++;
       while (true) {
-        const spacer = runs[cursor];
+        const spacer = translatedRuns[cursor];
         if (spacer?.type !== 'text' || spacer.text.trim()) break;
         cursor++;
       }
-      const next = runs[cursor];
-      if (next?.type !== 'asset' || next.assetId !== id) return false;
+      const next = translatedRuns[cursor];
+      if (!next || markerKey(next) !== key) return false;
     }
     return true;
   });
@@ -159,7 +171,8 @@ function contextFor(document: StructuredDocument, first: DocumentBlock, last: Do
       relevant.push(block.runs.filter(run => run.type === 'text').map(run => run.type === 'text' ? run.text : '').join(''));
     }
   }
-  return relevant.join('\n').slice(0, MAX_CONTEXT_CHARS);
+  return splitInlineMath(relevant.join('\n')).map(segment => segment.type === 'math' ? '[protected mathematical expression]' : segment.text)
+    .join('').slice(0, MAX_CONTEXT_CHARS);
 }
 
 /** Translates only prose blocks; original assets and their source hashes never leave the browser. */
@@ -169,7 +182,7 @@ export async function translateStructured(
 ): Promise<TranslatedDocument> {
   abortIfNeeded(signal);
   if (document.version !== 1 || document.sourceKind !== 'pdf' || !document.sourceHash) fail('O documento estruturado é inválido.');
-  if (!document.pages.length || document.pages.length > MAX_PDF_PAGES) fail('O PDF deve ter entre 1 e 20 páginas.');
+  if (!document.pages.length || document.pages.length > MAX_PDF_PAGES) fail(`O PDF deve ter entre 1 e ${MAX_PDF_PAGES} páginas.`);
   if (document.issues.some(issue => issue.severity === 'blocking')) fail('Revise os problemas de extração antes de traduzir.');
   if (!TARGET_LANGUAGES.some(([code]) => code === options.target) ||
       (options.source && !SOURCE_LANGUAGES.some(([code]) => code === options.source)) ||
@@ -194,11 +207,15 @@ export async function translateStructured(
     assetIds.add(asset.id);
   }
   const assets = new Map(document.assets.map(asset => [asset.id, asset]));
-  const candidates = translatableBlocks(document);
+  // Pure mathematical content has nothing to translate; retain it exactly for local typesetting.
+  const candidates = translatableBlocks(document).filter(block => splitMathRuns(block.runs).some(run => run.type === 'text' && run.text.trim()));
+  const candidateIds = new Set(candidates.map(block => block.id));
+  for (const id of Object.keys(state.completed)) if (!candidateIds.has(id)) delete state.completed[id];
   const serialized: Serialized[] = await Promise.all(candidates.map(async block => {
     const index = document.blocks.indexOf(block);
     const value = serialize(block, index, assets);
-    return { block, ...value, signature: await sha256(encoder.encode(value.xml)) };
+    const mathematicalContent = [...value.markers.values()].flatMap(marker => marker.mathText === undefined ? [] : [marker.mathText]);
+    return { block, ...value, signature: await sha256(encoder.encode(JSON.stringify([value.xml, mathematicalContent]))) };
   }));
   const pending: Serialized[] = [];
   for (const item of serialized) {

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reconstrução visual do PDF</title>
+  <style>
+    *{box-sizing:border-box}body{margin:24px;font:15px system-ui;color:#18383e;background:#edf1ef}h1{font-size:25px;margin:0 0 8px}p{margin:8px 0 16px}button{padding:10px 16px;border:1px solid #becac6;border-radius:8px;background:white;color:#18383e;cursor:pointer}button:disabled{opacity:.55}#result{font:13px/1.5 ui-monospace,monospace;white-space:pre-wrap;background:#fff;padding:14px;border-radius:8px;border-left:4px solid #7a8e85}#result[data-status=passed]{border-color:#258347}#result[data-status=failed]{border-color:#d24343}#artifacts{display:flex;gap:20px;flex-wrap:wrap;margin:18px 0}a{color:#1b6860}.comparison{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}.column h2{font-size:17px}.paper{margin-bottom:18px}.paper p{font-size:12px;margin:7px 0}canvas{display:block;background:white;max-width:100%;height:auto;box-shadow:0 3px 14px #18383e22}.notes{font-size:13px}details{margin-top:24px}summary{cursor:pointer;font-weight:600}#expanded{display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}#expanded canvas{max-width:350px}@media(max-width:850px){.comparison{grid-template-columns:1fr}body{margin:12px}}
+  </style>
+</head>
+<body>
+  <h1>Reconstrução visual do PDF</h1>
+  <p>Artigo A4 sintético com duas colunas, título e figura em largura total, legenda e equação preservada. Nenhuma API é utilizada.</p>
+  <button id="run">Executar verificações</button>
+  <pre id="result" data-status="idle">Aguardando execução.</pre>
+  <div id="artifacts"></div>
+  <div class="comparison"><section class="column"><h2>Original</h2><div id="original"></div></section><section class="column"><h2>Tradução reconstruída</h2><div id="translated"></div></section></div>
+  <details><summary>Teste de tradução expandida</summary><p class="notes">O conteúdo adicional deve continuar em outras páginas com tamanho legível e sem omissões.</p><div id="expanded"></div></details>
+  <script type="module" src="/tests/pdf-reconstruction-browser.ts"></script>
+</body>
+</html>

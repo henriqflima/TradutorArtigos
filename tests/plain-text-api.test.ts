@@ -28,7 +28,7 @@ describe('plain text API', () => {
     expect(await response.json()).toEqual({ translations: [text] });
     expect(response.headers.get('cache-control')).toContain('no-store');
     const body = JSON.parse(String(provider.mock.calls[0][1].body));
-    expect(body.store).toBe(false);
+    expect(body).toMatchObject({ model: 'gpt-6.1-terra', reasoning: { effort: 'medium' }, store: false });
     const input = JSON.parse(body.input);
     expect(input.blocks[0].xml).toContain('&lt;img');
     expect(input.source_language).toBe('Inglês');

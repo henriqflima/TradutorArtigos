@@ -44,7 +44,7 @@ export async function translateXmlBlocks(blocks: SourceBlock[], options: Options
       body: JSON.stringify({
         model: TRANSLATION_MODEL,
         store: false,
-        reasoning: { effort: 'none' },
+        reasoning: { effort: 'medium' },
         max_output_tokens: 16_384,
         instructions,
         input: JSON.stringify({ source_language: options.source, target_language: options.target,

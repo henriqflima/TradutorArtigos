@@ -1,6 +1,16 @@
 /** Coordinates are PDF points, with origin at the top left of the source page. */
 export type SourceRect = { x: number; y: number; width: number; height: number };
 export type RunStyle = { bold?: boolean; italic?: boolean; superscript?: boolean };
+/** Source appearance is advisory PDF layout metadata, separate from translated runs. */
+export type BlockAppearance = {
+  fontSize?: number;
+  fontFamily?: 'serif' | 'sans-serif' | 'monospace';
+  lineHeight?: number;
+  alignment?: 'left' | 'center' | 'right' | 'justify';
+  bold?: boolean;
+  italic?: boolean;
+  confidence?: 'native' | 'estimated';
+};
 export type ContentRun =
   | { type: 'text'; text: string; style?: RunStyle }
   | { type: 'asset'; assetId: string };
@@ -16,6 +26,8 @@ export type DocumentAsset = {
   sha256: string;
   alt: string;
   baselineOffsetPt?: number;
+  /** Explicit text-to-crop association when OCR only locates whole blocks. */
+  sourceText?: { blockId: string; text: string; occurrence?: number };
 };
 export type DocumentBlock = {
   id: string;
@@ -24,8 +36,14 @@ export type DocumentBlock = {
   rect: SourceRect;
   runs: ContentRun[];
   fontSize: number;
+  appearance?: BlockAppearance;
+  /** Original OCR classification, including headers, footers and references. */
+  sourceRole?: string;
   assetId?: string;
   captionId?: string;
+  geometry?: 'block';
+  /** Original recognized text, before user corrections or crop replacement. */
+  originalText?: string;
   /** A paragraph may continue in another column or on the following page. */
   fragments?: { page: number; rect: SourceRect }[];
 };

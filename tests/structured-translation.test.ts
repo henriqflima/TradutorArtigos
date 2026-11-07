@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import translateText from '../netlify/functions/translate-text';
 import { readBounded } from '../netlify/functions/_shared/http';
 import { translateStructured, type TranslationState } from '../src/structured-translation';
+import { ocrMathWarning } from '../src/ocr-layout';
 import type { DocumentBlock, StructuredDocument } from '../src/structured-document';
 
 const abort = () => new AbortController();
@@ -39,13 +40,134 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe('structured translation', () => {
+  it('translates text containing an OCR formula without requiring a crop', async () => {
+    const doc = fixture();
+    doc.assets = [];
+    doc.blocks = [paragraph('p1', 'The relation $E = mc^2$ describes the sample.')];
+    doc.issues = [ocrMathWarning(1, 'p1')];
+    provider.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      return Response.json({ translations: body.text.map((xml: string) => xml
+        .replace('The relation', 'A relação').replace('describes the sample.', 'descreve a amostra.')) });
+    });
+    const result = await translateStructured(doc, options, state(), () => {}, abort().signal);
+    expect(provider).toHaveBeenCalledOnce();
+    expect(result.blocks.p1).toEqual([{ type: 'text', text: 'A relação $E = mc^2$ descreve a amostra.' }]);
+    expect(result.document.issues).toContainEqual(expect.objectContaining({ id: 'ocr-inline-math-p1', severity: 'warning' }));
+    expect(result.document.issues.some(issue => issue.severity === 'blocking')).toBe(false);
+  });
+
+  it('keeps OCR TeX entirely local, including context, and restores source math across styled runs', async () => {
+    const doc = fixture();
+    doc.blocks = [
+      { ...paragraph('heading', String.raw`Viscosity \(\eta_0\)`), kind: 'heading' },
+      { ...paragraph('p1', ''), runs: [
+        { type: 'text', text: String.raw`where \( \eta_`, style: { bold: true } },
+        { type: 'text', text: '0', style: { superscript: true } },
+        { type: 'text', text: String.raw` \) < \(\dot{\gamma}=1/s\), \(\lambda\), \(T_{\mathrm{ref}}\), \(E_a\), \(\tau:\nabla v\) and `, style: { italic: true } },
+        { type: 'asset', assetId: 'eq-gamma' }, { type: 'text', text: ' are used.' },
+      ] },
+    ];
+    provider.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      const sent = JSON.stringify(body);
+      for (const command of [String.raw`\eta`, String.raw`\dot`, String.raw`\lambda`, String.raw`\mathrm`, String.raw`\tau`, String.raw`\nabla`]) {
+        expect(sent).not.toContain(command.replaceAll('\\', '\\\\'));
+      }
+      expect(body.context).toContain('[protected mathematical expression]');
+      expect(body.text[1]).toContain('<b><eq id="m1">LUME_M1_PROTECTED</eq></b>');
+      expect(body.text[1]).toContain('<eq id="m7">LUME_M7_PROTECTED</eq>');
+      return Response.json({ translations: body.text.map((xml: string) => xml.replace('where ', 'onde ').replace(' are used.', ' são usados.')) });
+    });
+    const result = await translateStructured(doc, options, state(), () => {}, abort().signal);
+    expect(result.blocks.p1).toEqual([
+      { type: 'text', text: String.raw`onde \( \eta_0 \)`, style: { bold: true } },
+      { type: 'text', text: String.raw` < \(\dot{\gamma}=1/s\), \(\lambda\), \(T_{\mathrm{ref}}\), \(E_a\), \(\tau:\nabla v\) and `, style: { italic: true } },
+      { type: 'asset', assetId: 'eq-gamma' }, { type: 'text', text: ' são usados.' },
+    ]);
+    expect(result.blocks.heading).toEqual(doc.blocks[0].runs);
+  });
+
+  it.each(['missing', 'duplicate', 'changed'])('rejects a %s OCR TeX marker before caching the batch', async failureMode => {
+    const doc = fixture(); doc.assets = [];
+    doc.blocks = [paragraph('p1', String.raw`Viscosity \(\eta_0\) is measured.`)];
+    provider.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      const token = '<eq id="m1">LUME_M1_PROTECTED</eq>';
+      return Response.json({ translations: body.text.map((xml: string) => failureMode === 'missing' ? xml.replace(token, '') :
+        failureMode === 'duplicate' ? xml.replace(token, token + token) : xml.replace('LUME_M1_PROTECTED', 'CHANGED')) });
+    });
+    const cache = state();
+    await expect(translateStructured(doc, options, cache, () => {}, abort().signal)).rejects.toThrow();
+    expect(cache.completed).toEqual({});
+  });
+
+  it('warns when a restored OCR symbol loses both spaces and becomes embedded in a word', async () => {
+    const doc = fixture(); doc.assets = [];
+    doc.blocks = [paragraph('p1', String.raw`A \(\eta\) B`)];
+    provider.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      return Response.json({ translations: body.text.map((xml: string) => xml.replace('A <eq', 'A<eq').replace('</eq> B', '</eq>B')) });
+    });
+    const result = await translateStructured(doc, options, state(), () => {}, abort().signal);
+    expect(result.document.issues).toContainEqual(expect.objectContaining({ id: 'translation-marker-p1', severity: 'warning' }));
+  });
+
+  it('invalidates cached translation when only the opaque formula source changes', async () => {
+    const doc = fixture(); doc.assets = [];
+    doc.blocks = [paragraph('p1', String.raw`Viscosity \(\eta_0\) is measured.`)];
+    provider.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)); return Response.json({ translations: body.text });
+    });
+    const cache = state();
+    await translateStructured(doc, options, cache, () => {}, abort().signal);
+    const originalSignature = cache.completed.p1.sourceSignature;
+    doc.blocks[0].runs = [{ type: 'text', text: String.raw`Viscosity \(\eta_1\) is measured.` }];
+    const result = await translateStructured(doc, options, cache, () => {}, abort().signal);
+    expect(provider).toHaveBeenCalledTimes(2);
+    const bodies = provider.mock.calls.map(([, init]) => JSON.parse(String(init.body)));
+    expect(bodies[0].text).toEqual(bodies[1].text);
+    expect(cache.completed.p1.sourceSignature).not.toBe(originalSignature);
+    expect(result.blocks.p1).toEqual(doc.blocks[0].runs);
+  });
+
+  it('retains pure TeX locally and discards a prior prose cache for that block', async () => {
+    const doc = fixture(); doc.assets = [];
+    doc.blocks = [paragraph('p1', 'Previous prose.')];
+    provider.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)); return Response.json({ translations: body.text });
+    });
+    const cache = state();
+    await translateStructured(doc, options, cache, () => {}, abort().signal);
+    doc.blocks[0].runs = [{ type: 'text', text: String.raw`\[\rho C_p\]`, style: { bold: true } }];
+    const result = await translateStructured(doc, options, cache, () => {}, abort().signal);
+    expect(provider).toHaveBeenCalledTimes(1);
+    expect(result.blocks.p1).toEqual(doc.blocks[0].runs);
+    expect(cache.completed).toEqual({});
+  });
+
   it('rejects documents outside the page limit before any translation call', async () => {
-    for (const pageCount of [0, 21]) {
+    for (const pageCount of [0, 51]) {
       const doc = fixture();
       doc.pages = Array.from({ length: pageCount }, () => ({ width: 612, height: 792 }));
-      await expect(translateStructured(doc, options, state(), () => {}, abort().signal)).rejects.toThrow(/20 páginas/);
+      await expect(translateStructured(doc, options, state(), () => {}, abort().signal)).rejects.toThrow(/50 páginas/);
     }
     expect(provider).not.toHaveBeenCalled();
+  });
+
+  it('translates content on the last page of an exact 50-page document', async () => {
+    const doc = fixture();
+    doc.pages = Array.from({ length: 50 }, () => ({ width: 612, height: 792 }));
+    doc.assets = [];
+    doc.blocks = [{ ...paragraph('last-page', 'Evidence on the final page.'), page: 50 }];
+    provider.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body));
+      return Response.json({ translations: body.text });
+    });
+    const result = await translateStructured(doc, options, state(), () => {}, abort().signal);
+    expect(result.document.pages).toHaveLength(50);
+    expect(result.blocks['last-page']).toEqual(doc.blocks[0].runs);
+    expect(provider).toHaveBeenCalledOnce();
   });
 
   it('invalidates results from a different model or prompt version', async () => {
@@ -58,7 +180,7 @@ describe('structured translation', () => {
     cache.engine = 'previous-provider:previous-prompt';
     await translateStructured(fixture(), options, cache, () => {}, abort().signal);
     expect(provider).toHaveBeenCalledTimes(2);
-    expect(cache.engine).toContain('gpt-6-luna:');
+    expect(cache.engine).toContain('gpt-6.1-terra:');
   });
 
   it('accepts asset block IDs generated by the PDF analyzer', async () => {
@@ -284,7 +406,7 @@ function openAIResponse(translations = [{ id: 'b1', xml: '<p id="b1">A deformaç
     content: [{ type: 'output_text', text: JSON.stringify({ translations }) }] }] });
 }
 
-describe('GPT-6 Luna text proxy', () => {
+describe('GPT-6.1 Terra text proxy', () => {
   it('uses Responses with strict structured output and keeps provider credentials server-side', async () => {
     provider.mockResolvedValue(openAIResponse());
     const response = await translateText(request(valid));
@@ -294,7 +416,7 @@ describe('GPT-6 Luna text proxy', () => {
     expect(url).toBe('https://api.openai.com/v1/responses');
     expect(init.headers.Authorization).toBe('Bearer test-openai-key');
     const body = JSON.parse(init.body);
-    expect(body).toMatchObject({ model: 'gpt-6-luna', store: false, reasoning: { effort: 'none' }, max_output_tokens: 16_384,
+    expect(body).toMatchObject({ model: 'gpt-6.1-terra', store: false, reasoning: { effort: 'medium' }, max_output_tokens: 16_384,
       text: { format: { type: 'json_schema', name: 'document_translation', strict: true } } });
     expect(body.text.format.schema.additionalProperties).toBe(false);
     expect(body.text.format.schema.properties.translations.items.properties.id.enum).toEqual(['b1']);

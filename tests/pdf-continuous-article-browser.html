@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Fluxo contínuo: artigo real</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#edf1ee;color:#213f3b;font:14px/1.5 system-ui;padding:24px}main{max-width:1450px;margin:auto}h1{margin:0;font-size:26px}p{max-width:1000px}button{padding:9px 15px;border:1px solid #b6cbbd;background:white;border-radius:6px;font:inherit;cursor:pointer}button:disabled{opacity:.5}pre{white-space:pre-wrap;background:white;border-left:4px solid #79917d;padding:14px}pre[data-status=passed]{border-color:#25823e}pre[data-status=failed]{border-color:#bc4a39}.metrics{display:flex;gap:12px;flex-wrap:wrap}.metric{background:white;padding:10px 15px;border:1px solid #d5e2d8;border-radius:6px}.metric strong{display:block;font-size:22px}.pages{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:18px;align-items:start}canvas{width:100%;height:auto;background:white;box-shadow:0 2px 8px #203a2722}.paper p{font-size:12px;margin-bottom:5px}.links{display:flex;gap:18px;margin:15px 0;flex-wrap:wrap}a{color:#236a45}details{margin:22px 0}summary{font-weight:600;cursor:pointer}.limitation{font-size:13px;color:#5c6e61}
+  </style>
+</head>
+<body><main>
+  <h1>Fluxo contínuo com o artigo real</h1>
+  <p>O ensaio reaproveita uma análise e uma tradução já armazenadas do artigo sobre extrusão de polipropileno. Os recortes vêm do PDF original, sem novas chamadas de OCR ou tradução.</p>
+  <p class="limitation">Esta análise estruturada é de um diagnóstico anterior à extração atual com Mistral. O ensaio valida a montagem com conteúdo real; não reproduz necessariamente a entrada da última versão publicada nem comprova a qualidade do OCR.</p>
+  <button id="run">Gerar e conferir PDF</button>
+  <pre id="result" data-status="idle">Preparando dados locais…</pre>
+  <div id="metrics" class="metrics"></div><div id="downloads" class="links"></div>
+  <h2>Nova distribuição</h2><div id="translated" class="pages"></div>
+  <details><summary>Original: 10 páginas</summary><div id="original" class="pages"></div></details>
+  <details><summary>PDF anterior fornecido: 20 páginas</summary><div id="previous" class="pages"></div></details>
+  <script type="module" src="/tests/pdf-continuous-article-browser.ts"></script>
+</main></body>
+</html>

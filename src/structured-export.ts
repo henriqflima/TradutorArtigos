@@ -1,10 +1,8 @@
+import { renderStructuredPdf } from './pdf-renderer';
+import type { PdfLayoutReport } from './pdf-layout';
 import JSZip from 'jszip';
-import { PDFDocument, StandardFonts, rgb, type PDFFont } from 'pdf-lib';
-import regularFontUrl from './fonts/NotoSerif-Regular.ttf?url';
-import boldFontUrl from './fonts/NotoSerif-Bold.ttf?url';
-import italicFontUrl from './fonts/NotoSerif-Italic.ttf?url';
-import boldItalicFontUrl from './fonts/NotoSerif-BoldItalic.ttf?url';
-import { abortIfNeeded, sha256, translatableBlocks, type ContentRun, type DocumentAsset, type DocumentBlock, type RunStyle, type StructuredDocument, type TranslatedDocument } from './structured-document';
+import { splitMathRuns } from './inline-math';
+import { abortIfNeeded, sha256, translatableBlocks, type ContentRun, type DocumentAsset, type DocumentBlock, type StructuredDocument, type TranslatedDocument } from './structured-document';
 
 const PAGE = { width: 612, height: 792, margin: 54 };
 const WIDTH = PAGE.width - PAGE.margin * 2;
@@ -82,6 +80,52 @@ async function prepare(translated: TranslatedDocument, signal?: AbortSignal): Pr
   return { assets, runs, captions };
 }
 
+/** Materialize recognized math only for export. Source validation stays DOM-free and original assets stay unchanged. */
+async function prepareMath(ready: Ready, document: StructuredDocument, format: 'pdf' | 'docx', onProgress: (status: string) => void,
+  signal?: AbortSignal): Promise<void> {
+  const cache = new Map<string, Promise<DocumentAsset>>();
+  let ordinal = 0;
+  for (const block of document.blocks) {
+    abortIfNeeded(signal);
+    if (isVisual(block) || block.sourceRole === 'code') continue;
+    const output: ContentRun[] = [];
+    for (const segment of splitMathRuns(ready.runs.get(block.id)!)) {
+        if (segment.type !== 'math') { output.push(segment); continue; }
+        abortIfNeeded(signal);
+        const style = segment.style;
+        const bold = Boolean(style?.bold || block.kind === 'heading' || format === 'pdf' && block.appearance?.bold);
+        const baseSize = format === 'docx' ? textSize(block) : Math.min(block.kind === 'heading' ? 44 : 24, Math.max(8, block.appearance?.fontSize ?? block.fontSize));
+        const size = baseSize * (style?.superscript ? .75 : 1);
+        const key = JSON.stringify([segment.tex, size, segment.display, Boolean(style?.superscript), bold]);
+        let pending = cache.get(key);
+        if (!pending) {
+          pending = (async () => {
+            onProgress('Preparando os símbolos matemáticos dentro do texto…');
+            const { rasterizeInlineMath } = await import('./inline-math-renderer');
+            let image: Awaited<ReturnType<typeof rasterizeInlineMath>>;
+            try { image = await rasterizeInlineMath(segment.tex, size, segment.display, { bold }); }
+            catch {
+              throw new Error(`Não foi possível montar a expressão matemática “${segment.text.slice(0, 120)}” do bloco ${block.id}. Confira a expressão reconhecida ou preserve-a como recorte do original.`);
+            }
+            abortIfNeeded(signal);
+            let id: string;
+            do { id = `lume-inline-math-${++ordinal}`; } while (ready.assets.has(id));
+            const asset: DocumentAsset = { id, kind: 'equation-inline', page: block.page, rect: { ...block.rect },
+              png: image.png, dataUrl: '', widthPt: image.widthPt, heightPt: image.heightPt,
+              baselineOffsetPt: image.baselineOffsetPt + (style?.superscript ? baseSize * .35 : 0),
+              sha256: await sha256(image.png), alt: `Expressão matemática reconhecida: ${segment.tex}` };
+            ready.assets.set(id, asset);
+            return asset;
+          })();
+          cache.set(key, pending);
+        }
+        const asset = await pending;
+        output.push({ type: 'asset', assetId: asset.id });
+    }
+    ready.runs.set(block.id, output);
+  }
+}
+
 /** Runs export integrity checks before any billable translation request. */
 export async function validateStructuredSource(document: StructuredDocument, signal?: AbortSignal): Promise<void> {
   await prepare({ document, blocks: Object.fromEntries(document.blocks.map(block => [block.id, block.runs])), sourceLanguage: '', targetLanguage: '' }, signal);
@@ -91,6 +135,7 @@ export async function validateStructuredSource(document: StructuredDocument, sig
 export async function createStructuredDocx(translated: TranslatedDocument, onProgress: (status: string) => void = () => undefined, signal?: AbortSignal): Promise<Blob> {
   onProgress('Conferindo texto, equações e imagens…');
   const ready = await prepare(translated, signal);
+  await prepareMath(ready, translated.document, 'docx', onProgress, signal);
   const zip = new JSZip();
   const imageRels: string[] = [];
   const relById = new Map<string, string>();
@@ -146,137 +191,11 @@ export async function createStructuredDocx(translated: TranslatedDocument, onPro
   return new Blob([new Uint8Array(bytes).buffer], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
 }
 
-type Fonts = { regular: PDFFont; bold: PDFFont; italic: PDFFont; boldItalic: PDFFont };
-let unicodeFontBytes: Promise<Uint8Array[]> | undefined;
-async function documentFonts(pdf: PDFDocument, ready: Ready, signal?: AbortSignal): Promise<Fonts> {
-  const standard = await pdf.embedFont(StandardFonts.TimesRoman);
-  const characters = new Set([...ready.runs.values()].flatMap(runs => runs.flatMap(r => r.type === 'text' ? [...r.text.replace(/[\r\n\t]/g, '')] : [])));
-  const needsUnicode = [...characters].some(char => { try { standard.encodeText(char); return false; } catch { return true; } });
-  if (!needsUnicode) return { regular: standard, bold: await pdf.embedFont(StandardFonts.TimesRomanBold), italic: await pdf.embedFont(StandardFonts.TimesRomanItalic), boldItalic: await pdf.embedFont(StandardFonts.TimesRomanBoldItalic) };
-  abortIfNeeded(signal);
-  const { default: fontkit } = await import('@pdf-lib/fontkit');
-  pdf.registerFontkit(fontkit);
-  // These licensed fonts are application assets. No document is persisted.
-  unicodeFontBytes ??= Promise.all([regularFontUrl, boldFontUrl, italicFontUrl, boldItalicFontUrl].map(async url => {
-    const response = await fetch(url, { cache: 'force-cache' });
-    if (!response.ok) throw new Error('Não foi possível carregar a fonte do PDF. Tente gerar o arquivo novamente.');
-    return new Uint8Array(await response.arrayBuffer());
-  })).catch(error => { unicodeFontBytes = undefined; throw error; });
-  const bytes = await unicodeFontBytes;
-  abortIfNeeded(signal);
-  const [regular, bold, italic, boldItalic] = await Promise.all(bytes.map(data => pdf.embedFont(data, { subset: true })));
-  for (const font of [regular, bold, italic, boldItalic]) {
-    const supported = new Set(font.getCharacterSet());
-    const missing = [...characters].find(char => !supported.has(char.codePointAt(0)!));
-    if (missing) throw new Error(`A fonte do PDF não suporta o caractere “${missing}” (U+${missing.codePointAt(0)!.toString(16).toUpperCase()}). Preserve o símbolo como imagem ou exporte o Word.`);
-  }
-  return { regular, bold, italic, boldItalic };
-}
-type Piece = { type: 'text'; text: string; style?: RunStyle; width: number; size: number } | { type: 'asset'; asset: DocumentAsset; width: number };
-type Line = { pieces: Piece[]; width: number; above: number; below: number; height: number };
-function fontFor(fonts: Fonts, style?: RunStyle) { return style?.bold ? style?.italic ? fonts.boldItalic : fonts.bold : style?.italic ? fonts.italic : fonts.regular; }
-function wrap(runs: ContentRun[], size: number, fonts: Fonts, assets: Map<string, DocumentAsset>, bold = false): Line[] {
-  const lines: Line[] = [];
-  let line: Line = { pieces: [], width: 0, above: size * .84, below: size * .3, height: 0 };
-  const finish = () => { line.height = Math.max(size * 1.25, line.above + line.below + 2); lines.push(line); line = { pieces: [], width: 0, above: size * .84, below: size * .3, height: 0 }; };
-  const add = (piece: Piece) => {
-    if (piece.width > WIDTH) throw new Error('Há um objeto maior que a largura da página. Revise o documento.');
-    if (line.width + piece.width > WIDTH && line.pieces.length) finish();
-    if (piece.type === 'text' && /^\s+$/u.test(piece.text) && !line.pieces.length) return;
-    line.pieces.push(piece); line.width += piece.width;
-    if (piece.type === 'asset') {
-      const offset = piece.asset.baselineOffsetPt ?? 0;
-      line.above = Math.max(line.above, piece.asset.heightPt + offset);
-      line.below = Math.max(line.below, -offset);
-    } else if (piece.style?.superscript) line.above = Math.max(line.above, piece.size * .84 + size * .35);
-  };
-  for (const run of runs) {
-    if (run.type === 'asset') { const asset = assets.get(run.assetId)!; add({ type: 'asset', asset, width: asset.widthPt }); continue; }
-    const style = { ...run.style, bold: run.style?.bold || bold };
-    const font = fontFor(fonts, style), drawSize = size * (style.superscript ? .75 : 1);
-    for (const token of run.text.replace(/\r\n?/g, '\n').replace(/\t/g, '    ').split(/(\n|[^\S\n]+)/u).filter(Boolean)) {
-      if (token === '\n') { finish(); continue; }
-      let width: number;
-      try { width = font.widthOfTextAtSize(token, drawSize); } catch {
-        const unsupported = [...token].find(char => { try { font.encodeText(char); return false; } catch { return true; } });
-        throw new Error(`O PDF desta versão não suporta o caractere ${unsupported ? `“${unsupported}” (U+${unsupported.codePointAt(0)!.toString(16).toUpperCase()})` : 'encontrado'}. Preserve o símbolo como imagem ou exporte o Word.`);
-      }
-      if (width <= WIDTH) { add({ type: 'text', text: token, style, width, size: drawSize }); continue; }
-      let chunk = '';
-      for (const char of token) {
-        if (chunk && font.widthOfTextAtSize(chunk + char, drawSize) > WIDTH) {
-          add({ type: 'text', text: chunk, style, width: font.widthOfTextAtSize(chunk, drawSize), size: drawSize }); finish(); chunk = '';
-        }
-        chunk += char;
-      }
-      if (chunk) add({ type: 'text', text: chunk, style, width: font.widthOfTextAtSize(chunk, drawSize), size: drawSize });
-    }
-  }
-  if (line.pieces.length || !lines.length) finish();
-  for (const item of lines) if (item.height > HEIGHT) throw new Error('Um símbolo dentro do texto é maior que a altura da página. Revise o documento.');
-  return lines;
-}
-
-/** Selectable text is drawn as PDF text; equations and figures keep source pixels. */
-export async function createStructuredPdf(translated: TranslatedDocument, onProgress: (status: string) => void = () => undefined, signal?: AbortSignal): Promise<Blob> {
+/** Source-informed PDF layout with selectable translated text and unchanged source crops. */
+export async function createStructuredPdf(translated: TranslatedDocument, onProgress: (status: string) => void = () => undefined,
+  signal?: AbortSignal, onLayout?: (report: PdfLayoutReport) => void): Promise<Blob> {
   onProgress('Conferindo os elementos e preparando o PDF…');
   const ready = await prepare(translated, signal);
-  const pdf = await PDFDocument.create();
-  const fonts = await documentFonts(pdf, ready, signal);
-  const images = new Map<string, Awaited<ReturnType<PDFDocument['embedPng']>>>();
-  for (const asset of ready.assets.values()) { abortIfNeeded(signal); images.set(asset.id, await pdf.embedPng(asset.png)); }
-  const layouts = new Map<string, Line[]>();
-  for (const block of translated.document.blocks) if (!isVisual(block)) layouts.set(block.id, wrap(ready.runs.get(block.id)!, textSize(block), fonts, ready.assets, block.kind === 'heading'));
-  let page = pdf.addPage([PAGE.width, PAGE.height]);
-  let top = PAGE.height - PAGE.margin;
-  const nextPage = () => { page = pdf.addPage([PAGE.width, PAGE.height]); top = PAGE.height - PAGE.margin; if (pdf.getPageCount() > 300) throw new Error('O documento excede o limite de 300 páginas desta versão.'); };
-  const ensure = (height: number) => { if (height > HEIGHT) throw new Error('Um elemento não cabe numa página. Revise suas dimensões.'); if (top - height < PAGE.margin) nextPage(); };
-  const drawLines = (lines: Line[], size: number) => {
-    for (const line of lines) {
-      abortIfNeeded(signal); ensure(line.height);
-      const baseline = top - line.above;
-      let x = PAGE.margin;
-      for (const piece of line.pieces) {
-        if (piece.type === 'asset') page.drawImage(images.get(piece.asset.id)!, { x, y: baseline + (piece.asset.baselineOffsetPt ?? 0), width: piece.width, height: piece.asset.heightPt });
-        else page.drawText(piece.text, { x, y: baseline + (piece.style?.superscript ? size * .35 : 0), size: piece.size, font: fontFor(fonts, piece.style), color: rgb(0, 0, 0) });
-        x += piece.width;
-      }
-      top -= line.height;
-    }
-  };
-  for (let index = 0; index < translated.document.blocks.length; index++) {
-    const block = translated.document.blocks[index];
-    abortIfNeeded(signal);
-    if (ready.captions.has(block.id)) continue;
-    onProgress(`Montando o PDF: bloco ${index + 1} de ${translated.document.blocks.length}…`);
-    if (!isVisual(block)) {
-      const lines = layouts.get(block.id)!;
-      if (block.kind === 'heading') {
-        const next = translated.document.blocks.slice(index + 1).find(value => !ready.captions.has(value.id));
-        const nextHeight = next && layouts.has(next.id) ? layouts.get(next.id)!.slice(0, 2).reduce((sum, line) => sum + line.height, 0) : 20;
-        const headingHeight = lines.reduce((sum, line) => sum + line.height, 0);
-        ensure(Math.min(HEIGHT, headingHeight + nextHeight + 8));
-      } else ensure(lines.slice(0, 2).reduce((sum, line) => sum + line.height, 0));
-      drawLines(lines, textSize(block)); top -= 8;
-      continue;
-    }
-    const caption = block.captionId ? translated.document.blocks.find(value => value.id === block.captionId)! : undefined;
-    const captionLines = caption ? layouts.get(caption.id)! : [];
-    const captionHeight = captionLines.reduce((sum, line) => sum + line.height, 0);
-    if (captionHeight > HEIGHT / 2) throw new Error(`A legenda ${caption!.id} é longa demais para acompanhar a figura numa página.`);
-    const asset = ready.assets.get(block.assetId!)!;
-    const size = imageSize(asset, HEIGHT - captionHeight - 24);
-    ensure(size.height + captionHeight + 24);
-    top -= 6;
-    page.drawImage(images.get(asset.id)!, { x: PAGE.margin + (WIDTH - size.width) / 2, y: top - size.height, width: size.width, height: size.height });
-    top -= size.height + 6;
-    if (caption) drawLines(captionLines, textSize(caption));
-    top -= 12;
-  }
-  for (let index = 0; index < pdf.getPageCount(); index++) pdf.getPage(index).drawText(String(index + 1), { x: PAGE.width / 2 - 3, y: 27, font: fonts.regular, size: 9 });
-  pdf.setTitle(translated.document.sourceName); pdf.setCreator('Lume'); pdf.setSubject(`Tradução ${translated.sourceLanguage} → ${translated.targetLanguage}`);
-  abortIfNeeded(signal);
-  const bytes = await pdf.save();
-  abortIfNeeded(signal);
-  return new Blob([new Uint8Array(bytes).buffer], { type: 'application/pdf' });
+  await prepareMath(ready, translated.document, 'pdf', onProgress, signal);
+  return renderStructuredPdf(translated, ready, onProgress, signal, onLayout);
 }

@@ -1,6 +1,7 @@
 import type { ContentRun } from './structured-document';
 
-export type Marker = { id: string; tag: 'eq' | 'obj'; token: string; assetId: string };
+export type Marker = { id: string; tag: 'eq' | 'obj'; token: string } &
+  ({ assetId: string; mathText?: never } | { mathText: string; assetId?: never });
 
 /** Inspect our restricted source markup without accepting arbitrary XML/HTML. */
 export function readSourceMarkup(xml: string) {
@@ -44,11 +45,7 @@ export function parseTranslationMarkup(xml: string, rootId: string, markers: Map
   const stack: string[] = [];
   let rootOpened = false, rootClosed = false, assetBody = '';
   let currentAsset: Marker | undefined;
-  const appendText = (raw: string) => {
-    if (!raw) return;
-    if (raw.includes('<') || raw.includes(']]>')) fail('A tradução devolveu XML malformado.');
-    const content = decodeXml(raw);
-    if (currentAsset) { assetBody += content; return; }
+  const appendContent = (content: string) => {
     if (!stack.length) {
       if (content.trim()) fail('A resposta da tradução contém texto fora do parágrafo.');
       return;
@@ -62,6 +59,13 @@ export function parseTranslationMarkup(xml: string, rootId: string, markers: Map
     const last = runs[runs.length - 1];
     if (last?.type === 'text' && styleKey(last.style) === styleKey(styled)) last.text += content;
     else runs.push({ type: 'text', text: content, ...(styled ? { style: styled } : {}) });
+  };
+  const appendText = (raw: string) => {
+    if (!raw) return;
+    if (raw.includes('<') || raw.includes(']]>')) fail('A tradução devolveu XML malformado.');
+    const content = decodeXml(raw);
+    if (currentAsset) { assetBody += content; return; }
+    appendContent(content);
   };
   let position = 0;
   while (position < xml.length) {
@@ -98,7 +102,8 @@ export function parseTranslationMarkup(xml: string, rootId: string, markers: Map
         fail('A tradução alterou o conteúdo de uma equação ou figura protegida.');
       }
       stack.pop(); seen.add(currentAsset.id);
-      runs.push({ type: 'asset', assetId: currentAsset.assetId });
+      if (currentAsset.mathText !== undefined) appendContent(currentAsset.mathText);
+      else runs.push({ type: 'asset', assetId: currentAsset.assetId });
       currentAsset = undefined; assetBody = '';
     } else {
       fail('A tradução devolveu uma marcação XML inesperada.');

@@ -1,6 +1,6 @@
-export const MAX_FILE_BYTES = 4_000_000;
-export const MAX_PDF_PAGES = 20;
-export const TRANSLATION_MODEL = 'gpt-6-luna';
+export const MAX_FILE_BYTES = 7_000_000;
+export const MAX_PDF_PAGES = 50;
+export const TRANSLATION_MODEL = 'gpt-6.1-terra';
 export const TRANSLATION_PROMPT_VERSION = 'scientific-translation-v1';
 export const EXTENSIONS = ['pdf'];
 export const TARGET_LANGUAGES = [
@@ -23,6 +23,6 @@ export function formatFileSize(bytes: number) {
 export function validateFile(file: { name: string; size: number }): string | null {
   if (!EXTENSIONS.includes(extension(file.name))) return 'Formato não aceito. Escolha um arquivo PDF.';
   if (!Number.isSafeInteger(file.size) || file.size <= 0) return 'Este arquivo está vazio ou possui tamanho inválido. Escolha outro PDF.';
-  if (file.size > MAX_FILE_BYTES) return 'O PDF excede o limite de 4 MB. Escolha um arquivo menor.';
+  if (file.size > MAX_FILE_BYTES) return `O PDF excede o limite de ${formatFileSize(MAX_FILE_BYTES)}. Escolha um arquivo menor.`;
   return null;
 }

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data: blob:; connect-src 'self'; frame-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Distribuição de um artigo denso</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;padding:24px;background:#edf1ee;color:#213f3b;font:14px/1.5 system-ui}main{max-width:1400px;margin:0 auto}h1{font-size:25px;line-height:1.2;margin:0 0 9px}p{margin:8px 0 16px}.intro{max-width:950px;color:#536c63}.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}button,select{border:1px solid #c7d4cb;border-radius:8px;background:white;color:#274b40;padding:9px 12px;font:inherit}button{cursor:pointer}button:disabled{opacity:.6}label{display:flex;gap:8px;align-items:center}#result{padding:14px 16px;background:#fff;border-radius:8px;border-left:4px solid #6c8872;font:13px/1.5 ui-monospace,monospace;white-space:pre-wrap}#result[data-status=passed]{border-left-color:#288444}#result[data-status=failed]{border-left-color:#bd5143}.metrics{display:flex;gap:14px;flex-wrap:wrap;margin:14px 0}.metric{background:#f9fbf9;border:1px solid #dce5dd;border-radius:8px;padding:10px 14px}.metric strong{font-size:20px;display:block}.comparison{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px;margin-top:20px;align-items:start}.comparison h2{font-size:16px;margin:0 0 10px}.paper{margin:0 0 20px}.paper p{font-size:12px;color:#617367;margin:0 0 7px}canvas{display:block;width:100%;height:auto;background:#fff;box-shadow:0 3px 12px #163c2522}.downloads{display:flex;gap:20px;flex-wrap:wrap;margin:14px 0}a{color:#236751}details{margin-top:24px}summary{font-weight:600;cursor:pointer}#stress{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:14px}.caption{font-size:12px;color:#687d70}@media(max-width:800px){body{padding:15px}.comparison{grid-template-columns:1fr}.controls label{width:100%;flex-wrap:wrap}.metric{flex:1}}
+  </style>
+</head>
+<body><main>
+  <h1>Texto, colunas e espaços em um artigo denso</h1>
+  <p class="intro">Ensaio com cerca de 800 palavras, duas colunas, resumo de largura total e figura em uma coluna. A tradução cresce aproximadamente 13%. As posições podem se ajustar para manter uma distribuição próxima e uma leitura confortável.</p>
+  <div class="controls"><label>Caso de teste <select id="scenario"><option value="dense">Artigo denso com quebras do OCR</option><option value="noisy">Mesmo artigo com cabeçalho impreciso</option></select></label><button id="run">Verificar a montagem</button></div>
+  <pre id="result" data-status="idle">Preparando o ensaio…</pre>
+  <div id="metrics" class="metrics"></div><div id="downloads" class="downloads"></div>
+  <div class="comparison"><section><h2>Original</h2><div id="original"></div></section><section><h2>Tradução com distribuição ajustada</h2><div id="translated"></div></section></div>
+  <details><summary>Continuação com um parágrafo muito maior</summary><p class="caption">Um teste separado verifica o conteúdo completo e a continuidade em várias páginas. Este volume adicional ultrapassa o espaço físico do original.</p><div id="stress"></div></details>
+  <script type="module" src="/tests/pdf-dense-layout-browser.ts"></script>
+</main></body></html>

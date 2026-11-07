@@ -21,13 +21,14 @@ function request(headers: Record<string, string> = {}) {
 }
 
 describe('PDF input limits', () => {
-  it('accepts only nonempty PDFs up to exactly 4 MB', () => {
+  it('accepts only nonempty PDFs up to exactly 7 MB', () => {
     expect(EXTENSIONS).toEqual(['pdf']);
-    expect(MAX_FILE_BYTES).toBe(4_000_000);
-    expect(MAX_PDF_PAGES).toBe(20);
-    expect(validateFile({ name: 'article.pdf', size: 4_000_000 })).toBeNull();
+    expect(MAX_FILE_BYTES).toBe(7_000_000);
+    expect(MAX_PDF_PAGES).toBe(50);
+    expect(validateFile({ name: 'article.pdf', size: 7_000_000 })).toBeNull();
+    expect(validateFile({ name: 'article.pdf', size: 4_000_001 })).toBeNull();
     expect(validateFile({ name: 'ARTICLE.PDF', size: 10 })).toBeNull();
-    expect(validateFile({ name: 'article.pdf', size: 4_000_001 })).toContain('4 MB');
+    expect(validateFile({ name: 'article.pdf', size: 7_000_001 })).toContain('7 MB');
     expect(validateFile({ name: 'empty.pdf', size: 0 })).toContain('vazio');
   });
 
@@ -41,7 +42,8 @@ describe('OpenAI configuration and access', () => {
   it('reports provider/model without exposing credentials or obsolete plan fields', async () => {
     settings.APP_ACCESS_CODE = 'private';
     const response = await config();
-    expect(await response.json()).toEqual({ configured: true, accessRequired: true, provider: 'openai', model: 'gpt-6-luna' });
+    expect(await response.json()).toEqual({ configured: true, accessRequired: true, provider: 'openai', model: 'gpt-6.1-terra',
+      ocr: { configured: false, provider: 'mistral', model: 'mistral-ocr-latest' } });
     expect(response.headers.get('cache-control')).toContain('no-store');
     expect(provider).not.toHaveBeenCalled();
   });
