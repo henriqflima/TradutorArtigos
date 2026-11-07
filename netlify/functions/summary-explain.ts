@@ -1,7 +1,7 @@
 import type { Config } from '@netlify/functions';
-import { parseSummaryComments } from '../../src/summary-contract';
-import { failure, HttpError, json } from './_shared/http';
-import { authorizeSummary, boundedString, objectSchema, safeWebUrl, stringList, summaryInput, summaryResponse } from './_shared/summary-openai';
+import { parseSummaryComments } from '../../src/summary-contract.js';
+import { failure, HttpError, json } from './_shared/http.js';
+import { authorizeSummary, boundedString, objectSchema, safeWebUrl, stringList, summaryInput, summaryResponse } from './_shared/summary-openai.js';
 
 const schema = objectSchema({ comments: { type: 'array', items: objectSchema({ concept: { type: 'string' }, explanation: { type: 'string' },
   sources: { type: 'array', items: objectSchema({ title: { type: 'string' }, url: { type: 'string' } }) } }) } });

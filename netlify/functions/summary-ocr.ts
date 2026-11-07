@@ -1,9 +1,9 @@
 import type { Config } from '@netlify/functions';
 import { PDFDocument } from 'pdf-lib';
-import { MAX_OCR_REQUEST_BYTES } from '../../src/ocr-contract';
-import { failure, HttpError, json, readBounded } from './_shared/http';
-import { recognizePdf } from './_shared/mistral';
-import { authorizeSummary } from './_shared/summary-openai';
+import { MAX_OCR_REQUEST_BYTES } from '../../src/ocr-contract.js';
+import { failure, HttpError, json, readBounded } from './_shared/http.js';
+import { recognizePdf } from './_shared/mistral.js';
+import { authorizeSummary } from './_shared/summary-openai.js';
 
 export default async (req: Request) => {
   try {

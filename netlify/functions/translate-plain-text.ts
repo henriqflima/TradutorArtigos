@@ -1,9 +1,9 @@
 import type { Config } from '@netlify/functions';
-import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from '../../src/shared';
-import { validatePlainText } from '../../src/plain-text';
-import { parseTranslationMarkup } from '../../src/translation-markup';
-import { HttpError, authorize, failure, headers, readBounded } from './_shared/http';
-import { ProviderError, translateXmlBlocks } from './_shared/openai';
+import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from '../../src/shared.js';
+import { validatePlainText } from '../../src/plain-text.js';
+import { parseTranslationMarkup } from '../../src/translation-markup.js';
+import { HttpError, authorize, failure, headers, readBounded } from './_shared/http.js';
+import { ProviderError, translateXmlBlocks } from './_shared/openai.js';
 
 const FIELDS = new Set(['text', 'source_lang', 'target_lang']);
 

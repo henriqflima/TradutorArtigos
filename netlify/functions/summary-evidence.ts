@@ -1,9 +1,9 @@
 import type { Config } from '@netlify/functions';
 import { Buffer } from 'node:buffer';
-import { SUMMARY_SECTIONS, parseSummaryExtraction, validSummarySource, type SummarySource } from '../../src/summary-contract';
-import { failure, HttpError, json } from './_shared/http';
-import { authorizeSummary, objectSchema, stringsSchema, summaryInput, summaryResponse } from './_shared/summary-openai';
-import { createSummaryValueMatcher, recoverSummaryQuote } from './_shared/summary-evidence-validation';
+import { SUMMARY_SECTIONS, parseSummaryExtraction, validSummarySource, type SummarySource } from '../../src/summary-contract.js';
+import { failure, HttpError, json } from './_shared/http.js';
+import { authorizeSummary, objectSchema, stringsSchema, summaryInput, summaryResponse } from './_shared/summary-openai.js';
+import { createSummaryValueMatcher, recoverSummaryQuote } from './_shared/summary-evidence-validation.js';
 
 const evidenceSchema = objectSchema({
   id: { type: 'string' }, section: { type: 'string', enum: [...SUMMARY_SECTIONS, 'conclusion', 'reference', 'other'] },

@@ -1,4 +1,4 @@
-import { env, HttpError, readBounded } from './http';
+import { env, HttpError, readBounded } from './http.js';
 
 export const SUMMARY_PROMPT_VERSION = 'scientific-summary-v2';
 export function summaryModel() {

@@ -1,7 +1,7 @@
 import type { Config } from '@netlify/functions';
-import { env, failure, json } from './_shared/http';
-import { ocrModel } from './_shared/mistral';
-import { SUMMARY_PROMPT_VERSION, summaryModel } from './_shared/summary-openai';
+import { env, failure, json } from './_shared/http.js';
+import { ocrModel } from './_shared/mistral.js';
+import { SUMMARY_PROMPT_VERSION, summaryModel } from './_shared/summary-openai.js';
 
 export default async () => {
   try { return json({ configured: Boolean(env('OPENAI_API_KEY')), ocrConfigured: Boolean(env('MISTRAL_API_KEY')),

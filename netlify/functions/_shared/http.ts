@@ -13,7 +13,10 @@ export function headers() {
   return { 'Cache-Control': 'no-store, private, max-age=0', 'Netlify-CDN-Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
 }
 export function json(value: unknown, status = 200) { return Response.json(value, { status, headers: headers() }); }
-export function env(name: string) { return Netlify.env.get(name)?.trim() || ''; }
+export function env(name: string) {
+  const value = typeof Netlify === 'undefined' ? process.env[name] : Netlify.env.get(name);
+  return value?.trim() || '';
+}
 export function authorize(req: Request, provider: 'openai' | 'mistral' = 'openai') {
   if (req.method !== 'POST') throw new HttpError(405, 'Método não permitido.');
   const origin = req.headers.get('origin');

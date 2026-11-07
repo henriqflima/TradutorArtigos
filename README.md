@@ -1,6 +1,6 @@
 # Lume — tradutor de textos e artigos em PDF
 
-Aplicativo web em português que traduz textos e artigos com **GPT-6.1 Terra pela API da OpenAI** e extrai todos os PDFs com **Mistral OCR**. A opção de texto oferece entrada e tradução lado a lado, com seleção de idiomas e até 10.000 palavras. Para artigos, o programa analisa o PDF, preserva imagens e equações por recortes locais e monta os arquivos Word e PDF traduzidos. Interface React/TypeScript, build Vite e backend em Netlify Functions.
+Aplicativo web em português que traduz textos e artigos com **GPT-6.1 Terra pela API da OpenAI** e extrai todos os PDFs com **Mistral OCR**. A opção de texto oferece entrada e tradução lado a lado, com seleção de idiomas e até 10.000 palavras. Para artigos, o programa analisa o PDF, preserva imagens e equações por recortes locais e monta os arquivos Word e PDF traduzidos. A interface usa React e TypeScript, o build usa Vite e o backend roda em funções da Netlify ou da Vercel.
 
 ## Escopo desta versão
 
@@ -55,6 +55,14 @@ O endereço do projeto existente é [lume-tradutor.netlify.app](https://lume-tra
 
 A DeepL não participa do novo fluxo. As antigas variáveis `DEEPL_API_KEY` e rotas documentais de upload, status e download não são usadas. A autenticação compartilhada é um controle simples para uso privado; os custos e limites devem ser administrados também nas contas Mistral e OpenAI.
 
+## Publicar na Vercel
+
+1. Importe o repositório do GitHub. Use a raiz do repositório como **Root Directory** e selecione **Vite** como **Framework Preset**. O `vercel.json` define o comando `pnpm build` e a saída `dist`.
+2. Em **Settings → Environment Variables**, cadastre `OPENAI_API_KEY` e `MISTRAL_API_KEY` como segredos de servidor em **Production** e também em **Preview** se for testar nesse ambiente. Use os nomes sem o prefixo `VITE_`. Configure `APP_ACCESS_CODE` para restringir as rotas que fazem chamadas pagas. [Variáveis de ambiente na Vercel](https://vercel.com/docs/environment-variables/managing-environment-variables)
+3. Após alterar as variáveis, gere um novo deploy. No domínio publicado, confirme que `GET /api/config` e `GET /api/summary-config` retornam HTTP 200 com JSON. Em `/api/summary-config`, os campos `configured` e `ocrConfigured` devem estar como `true` para habilitar a extração do resumo.
+
+Os limites por IP declarados nas funções da Netlify se aplicam apenas à Netlify. Na Vercel, configure a limitação de requisições no Firewall do projeto. [Limitação de requisições na Vercel](https://vercel.com/docs/vercel-firewall/vercel-waf/rate-limiting)
+
 ## Processamento e API
 
 ### Resumo independente
@@ -73,7 +81,7 @@ O navegador valida o PDF e prepara todas as suas páginas para a extração pela
 
 O OCR usa `POST /api/ocr`: cada página do documento é separada em um PDF de uma página e enviada como corpo binário `application/pdf`, sem o nome original. O servidor confere tamanho, assinatura, quantidade de páginas e autorização antes de chamar `POST https://api.mistral.ai/v1/ocr`. A conversão para Base64 ocorre somente no servidor; não há upload pela Files API nem URL pública do documento. A solicitação habilita blocos e confiança por bloco, sem pedir imagens em Base64. A resposta é validada e normalizada antes de chegar ao navegador. O modelo efetivamente retornado acompanha o resultado.
 
-A rota de OCR mantém o limite de 30 chamadas por minuto por IP e domínio. Para documentos com mais de 30 páginas, o navegador espaça os inícios das chamadas em pelo menos 2,1 segundos, evitando uma sequência rápida de 50 envios. Os limites e quotas da conta Mistral continuam sendo aplicados pelo provedor.
+Na Netlify, a rota de OCR tem limite de 30 chamadas por minuto por IP e domínio. Para documentos com mais de 30 páginas, o navegador espaça os inícios das chamadas em pelo menos 2,1 segundos, evitando uma sequência rápida de 50 envios. Os limites e quotas da conta Mistral continuam sendo aplicados pelo provedor.
 
 As coordenadas dos blocos Mistral são convertidas para pontos do PDF; elas não são tratadas como posições de palavras. Fórmulas reconhecidas dentro do texto geram apenas um aviso de conferência, sem impedir a confirmação da página ou a tradução; preservá-las como recorte é opcional. Ao preservar apenas um símbolo ou fórmula dentro de um parágrafo reconhecido, a revisão permite associar o recorte ao texto exato da expressão original, incluindo suas marcações. Se a expressão se repetir, selecione a ocorrência pelo contexto mostrado. Um recorte parcial sem associação impede a confirmação para evitar apagar prosa ou duplicar a fórmula. Correções manuais do texto atualizam o aviso de fórmulas pendentes; os vínculos continuam referenciando o texto original reconhecido. O reconhecimento pode falhar e não comprova fidelidade científica.
 
@@ -93,7 +101,7 @@ O progresso e os resultados ficam em memória. A retomada reutiliza traduções 
 
 As chaves Mistral e OpenAI permanecem no servidor. O aplicativo não mantém banco de dados, histórico, cookies de aplicação ou armazenamento persistente de documentos. As respostas da API usam `Cache-Control: no-store`; o código não registra conteúdo documental nem encaminha mensagens brutas dos provedores. Fechar ou recarregar a página perde os resultados da sessão.
 
-Todas as páginas de todo PDF, incluindo texto, figuras e equações, são processadas pela Mistral e passam pela infraestrutura Netlify. Isso também se aplica aos PDFs com texto selecionável. O texto revisado é enviado à OpenAI para tradução; as chamadas à Responses API usam `store: false`. Isso não equivale a retenção zero em nenhum dos provedores. O aplicativo evita a Files API da Mistral, mas o processamento continua sujeito às políticas aplicáveis à conta. Consulte os [controles de dados da API da OpenAI](https://developers.openai.com/api/docs/guides/your-data) e as [condições de retenção de dados da Mistral](https://docs.mistral.ai/admin/monitor-comply/zero-data-retention).
+Todas as páginas de todo PDF, incluindo texto, figuras e equações, passam pela infraestrutura de hospedagem do aplicativo para processamento pela Mistral. Isso também se aplica aos PDFs com texto selecionável. O texto revisado é enviado à OpenAI para tradução em chamadas à Responses API com `store: false`. O OCR usa a API da Mistral diretamente, e a retenção de dados segue as políticas dos provedores aplicáveis à conta. [Controles de dados da API da OpenAI](https://developers.openai.com/api/docs/guides/your-data) · [Condições de retenção de dados da Mistral](https://docs.mistral.ai/admin/monitor-comply/zero-data-retention)
 
 A classificação de figuras, equações e ordem de leitura fornecida pelo OCR exige revisão. Os recortes preservam sua aparência, mas não tornam as equações editáveis. A região selecionada precisa conter todos os símbolos. Colunas, hifenização, fontes matemáticas antigas, sub/sobrescritos e gráficos compostos merecem atenção.
 

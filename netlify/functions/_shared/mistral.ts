@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer';
-import { MAX_OCR_BLOCKS, MAX_OCR_RESPONSE_BYTES, OCR_MODEL, OCR_TIMEOUT_MS, type OcrBlock, type OcrResult } from '../../../src/ocr-contract';
-import { env, HttpError, readBounded, type ProviderErrorDetails } from './http';
+import { MAX_OCR_BLOCKS, MAX_OCR_RESPONSE_BYTES, OCR_MODEL, OCR_TIMEOUT_MS, type OcrBlock, type OcrResult } from '../../../src/ocr-contract.js';
+import { env, HttpError, readBounded, type ProviderErrorDetails } from './http.js';
 
 const INVALID_RESPONSE = 'A Mistral retornou uma estrutura de OCR inválida. Tente novamente ou use outro PDF.';
 const MAX_ERROR_BYTES = 8_192;

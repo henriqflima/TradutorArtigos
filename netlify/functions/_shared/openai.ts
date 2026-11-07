@@ -1,6 +1,6 @@
-import { TRANSLATION_MODEL, TRANSLATION_PROMPT_VERSION } from '../../../src/shared';
-import { parseTranslationMarkup, type Marker } from '../../../src/translation-markup';
-import { HttpError, env, readBounded } from './http';
+import { TRANSLATION_MODEL, TRANSLATION_PROMPT_VERSION } from '../../../src/shared.js';
+import { parseTranslationMarkup, type Marker } from '../../../src/translation-markup.js';
+import { HttpError, env, readBounded } from './http.js';
 
 type SourceBlock = { id: string; xml: string; markers: Map<string, Marker> };
 type Options = { source: string; target: string; context: string };
