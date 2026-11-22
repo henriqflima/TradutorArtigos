@@ -24,7 +24,8 @@ function output(data: unknown, annotations: unknown[] = []) {
 }
 const extraction = () => ({ evidence: [evidence], concepts: ['Calor específico'], warnings: [] });
 beforeEach(() => {
-  settings = { OPENAI_API_KEY: 'test-openai', MISTRAL_API_KEY: 'test-mistral' };
+  settings = { LANGUAGE_API_KEY: 'test-language-key', LANGUAGE_API_URL: 'https://processing.test/v1/responses', SUMMARY_MODEL: 'summary-model-internal',
+    OCR_API_KEY: 'test-ocr-key', OCR_API_URL: 'https://processing.test/v1/ocr', OCR_MODEL: 'ocr-model-internal' };
   vi.stubGlobal('Netlify', { env: { get: (name: string) => settings[name] } });
   vi.stubGlobal('fetch', provider);
   provider.mockReset(); provider.mockResolvedValue(output(extraction()));
@@ -32,10 +33,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('independent summary APIs', () => {
-  it('has a dedicated configuration and configurable model without revealing keys', async () => {
+  it('reports dedicated summary configuration without revealing server settings', async () => {
     settings.SUMMARY_MODEL = 'summary-model'; settings.APP_ACCESS_CODE = 'private';
     const response = await configHandler();
-    expect(await response.json()).toMatchObject({ configured: true, ocrConfigured: true, accessRequired: true, model: 'summary-model' });
+    const config = await response.json();
+    expect(config).toMatchObject({ configured: true, ocrConfigured: true, accessRequired: true, model: 'summary-v1', ocrModel: 'ocr-v1' });
+    expect(JSON.stringify(config)).not.toMatch(/summary-model|test-language-key|test-ocr-key|processing\.test/);
     expect(response.headers.get('cache-control')).toContain('no-store');
     expect(provider).not.toHaveBeenCalled();
   });
@@ -43,8 +46,11 @@ describe('independent summary APIs', () => {
     const response = await evidenceHandler(request('summary-evidence', { sources: [source] }));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(extraction());
-    const body = JSON.parse(provider.mock.calls[0][1].body);
-    expect(body).toMatchObject({ store: false, model: 'gpt-6.1-terra', text: { format: { type: 'json_schema', strict: true } } });
+    const [url, init] = provider.mock.calls[0];
+    expect(url).toBe('https://processing.test/v1/responses');
+    expect(init.redirect).toBe('error');
+    const body = JSON.parse(init.body);
+    expect(body).toMatchObject({ store: false, model: 'summary-model-internal', text: { format: { type: 'json_schema', strict: true } } });
     expect(body.instructions).toContain('NOT a translation');
     expect(body.instructions).toContain('prior-work');
     expect(body.tools).toBeUndefined();
@@ -263,7 +269,7 @@ describe('independent summary APIs', () => {
     expect((await evidenceHandler(request('summary-evidence', { sources: [source] }, { 'X-Access-Code': 'private' }))).status).toBe(200);
     settings = {};
     const response = await evidenceHandler(request('summary-evidence', { sources: [source] }));
-    expect(response.status).toBe(503); expect(await response.text()).toContain('resumos');
+    expect(response.status).toBe(503); expect(await response.text()).toContain('resumo');
   });
   it('handles incomplete output and refusal without accepting partial data', async () => {
     provider.mockResolvedValueOnce(Response.json({ status: 'incomplete', output: [] }));
@@ -272,16 +278,16 @@ describe('independent summary APIs', () => {
     expect((await evidenceHandler(request('summary-evidence', { sources: [source] }))).status).toBe(422);
   });
   it('does not expose upstream messages or key material on provider failure', async () => {
-    provider.mockResolvedValueOnce(Response.json({ error: { message: 'private text test-openai' } }, { status: 400 }));
+    provider.mockResolvedValueOnce(Response.json({ error: { message: 'private text test-language-key' } }, { status: 400 }));
     const response = await evidenceHandler(request('summary-evidence', { sources: [source] }));
-    expect(response.status).toBe(502); expect(await response.text()).not.toMatch(/private text|test-openai/);
+    expect(response.status).toBe(502); expect(await response.text()).not.toMatch(/private text|test-language-key/);
   });
   it('rejects unsupported content and oversized requests before contacting a provider', async () => {
     expect((await evidenceHandler(request('summary-evidence', { sources: [source] }, { 'Content-Type': 'application/json-other' }))).status).toBe(415);
     expect((await composeHandler(request('summary-compose', {}, { 'Content-Length': '2000001' }))).status).toBe(413);
     expect(provider).not.toHaveBeenCalled();
   });
-  it('validates the independent OCR page endpoint before calling Mistral', async () => {
+  it('validates the independent OCR page endpoint before contacting the OCR service', async () => {
     const pdf = await PDFDocument.create(); pdf.addPage([600, 800]); pdf.addPage([600, 800]);
     const bytes = await pdf.save();
     const response = await ocrHandler(new Request('https://lume.test/api/summary-ocr', { method: 'POST', headers: { 'Content-Type': 'application/pdf' }, body: new Uint8Array(bytes).buffer }));

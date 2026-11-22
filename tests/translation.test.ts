@@ -1,12 +1,12 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import config from '../netlify/functions/config';
 import translateText from '../netlify/functions/translate-text';
-import { EXTENSIONS, MAX_FILE_BYTES, MAX_PDF_PAGES, validateFile } from '../src/shared';
+import { EXTENSIONS, MAX_FILE_BYTES, MAX_PDF_PAGES, TRANSLATION_ENGINE, validateFile } from '../src/shared';
 
 let settings: Record<string, string>;
 const provider = vi.fn();
 beforeEach(() => {
-  settings = { OPENAI_API_KEY: 'test-openai-key' };
+  settings = { LANGUAGE_API_KEY: 'test-language-key', LANGUAGE_API_URL: 'https://processing.test/v1/responses', TRANSLATION_MODEL: 'translation-model' };
   vi.stubGlobal('Netlify', { env: { get: (name: string) => settings[name] } });
   vi.stubGlobal('fetch', provider);
   provider.mockReset();
@@ -38,22 +38,33 @@ describe('PDF input limits', () => {
     });
 });
 
-describe('OpenAI configuration and access', () => {
+describe('Translation configuration and access', () => {
   it('reports provider/model without exposing credentials or obsolete plan fields', async () => {
     settings.APP_ACCESS_CODE = 'private';
     const response = await config();
-    expect(await response.json()).toEqual({ configured: true, accessRequired: true, provider: 'openai', model: 'gpt-6.1-terra',
-      ocr: { configured: false, provider: 'mistral', model: 'mistral-ocr-latest' } });
+    expect(await response.json()).toEqual({ configured: true, accessRequired: true, provider: 'translation', model: TRANSLATION_ENGINE,
+      ocr: { configured: false, provider: 'ocr', model: 'ocr-v1' } });
     expect(response.headers.get('cache-control')).toContain('no-store');
     expect(provider).not.toHaveBeenCalled();
   });
 
-  it('uses OPENAI_API_KEY and reports an honest unconfigured state', async () => {
-    settings = { DEEPL_API_KEY: 'obsolete-provider-key' };
+  it('reports the service as unavailable without complete settings', async () => {
+    delete settings.LANGUAGE_API_URL;
     expect(await (await config()).json()).toMatchObject({ configured: false, accessRequired: false });
     const response = await translateText(request());
     expect(response.status).toBe(503);
     expect(await response.text()).toContain('configuração do serviço');
+    expect(provider).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    'http://processing.test/v1/responses',
+    'https://user:password@processing.test/v1/responses',
+    'https://processing.test/v1/responses#fragment',
+  ])('rejects invalid server endpoints without forwarding content', async endpoint => {
+    settings.LANGUAGE_API_URL = endpoint;
+    expect(await (await config()).json()).toMatchObject({ configured: false });
+    expect((await translateText(request())).status).toBe(503);
     expect(provider).not.toHaveBeenCalled();
   });
 
@@ -65,7 +76,7 @@ describe('OpenAI configuration and access', () => {
     expect(provider).not.toHaveBeenCalled();
   });
 
-  it('rejects unsupported methods without contacting OpenAI', async () => {
+  it('rejects unsupported methods without contacting the service', async () => {
     expect((await translateText(new Request('https://lume.test/api/translate-text'))).status).toBe(405);
     expect(provider).not.toHaveBeenCalled();
   });

@@ -4,7 +4,7 @@ import api from '../api/[route]';
 
 beforeEach(() => {
   vi.stubGlobal('Netlify', undefined);
-  for (const name of ['OPENAI_API_KEY', 'MISTRAL_API_KEY', 'APP_ACCESS_CODE', 'SUMMARY_MODEL', 'MISTRAL_OCR_MODEL']) {
+  for (const name of ['LANGUAGE_API_KEY', 'LANGUAGE_API_URL', 'TRANSLATION_MODEL', 'SUMMARY_MODEL', 'OCR_API_KEY', 'OCR_API_URL', 'OCR_MODEL', 'APP_ACCESS_CODE']) {
     vi.stubEnv(name, undefined);
   }
 });
@@ -22,8 +22,12 @@ describe('Vercel API entry point', () => {
     expect(missing.headers.get('content-type')).toContain('application/json');
     expect(await missing.json()).toMatchObject({ configured: false, ocrConfigured: false, accessRequired: false });
 
-    vi.stubEnv('OPENAI_API_KEY', 'openai-secret');
-    vi.stubEnv('MISTRAL_API_KEY', 'mistral-secret');
+    vi.stubEnv('LANGUAGE_API_KEY', 'language-secret');
+    vi.stubEnv('LANGUAGE_API_URL', 'https://processing.test/v1/responses');
+    vi.stubEnv('SUMMARY_MODEL', 'summary-model');
+    vi.stubEnv('OCR_API_KEY', 'ocr-secret');
+    vi.stubEnv('OCR_API_URL', 'https://processing.test/v1/ocr');
+    vi.stubEnv('OCR_MODEL', 'ocr-model');
     vi.stubEnv('APP_ACCESS_CODE', 'access-secret');
     const configured = await api.fetch(new Request(url));
     expect(configured.status).toBe(200);
@@ -43,7 +47,9 @@ describe('Vercel API entry point', () => {
   });
 
   it('keeps the original PDF bytes and access checks behind the HTTPS proxy', async () => {
-    vi.stubEnv('MISTRAL_API_KEY', 'mistral-secret');
+    vi.stubEnv('OCR_API_KEY', 'ocr-secret');
+    vi.stubEnv('OCR_API_URL', 'https://processing.test/v1/ocr');
+    vi.stubEnv('OCR_MODEL', 'ocr-model');
     vi.stubEnv('APP_ACCESS_CODE', 'access-secret');
     const provider = vi.fn(async (_url: string, _options: RequestInit) => Response.json({}, { status: 429 }));
     vi.stubGlobal('fetch', provider);
@@ -63,7 +69,7 @@ describe('Vercel API entry point', () => {
     expect((await api.fetch(request('https://lume.test', 'access-secret'))).status).toBe(429);
     expect(provider).toHaveBeenCalledTimes(1);
     const [url, options] = provider.mock.calls[0];
-    expect(url).toBe('https://api.mistral.ai/v1/ocr');
+    expect(url).toBe('https://processing.test/v1/ocr');
     expect(JSON.parse(String(options.body)).document.document_url).toBe(
       `data:application/pdf;base64,${Buffer.from(bytes).toString('base64')}`,
     );

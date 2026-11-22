@@ -1,7 +1,7 @@
 import { requestTranslations } from './translation-transport';
 import { parseTranslationMarkup, type Marker } from './translation-markup';
 import { splitInlineMath, splitMathRuns } from './inline-math';
-import { MAX_PDF_PAGES, SOURCE_LANGUAGES, TARGET_LANGUAGES, TRANSLATION_MODEL, TRANSLATION_PROMPT_VERSION } from './shared';
+import { MAX_PDF_PAGES, SOURCE_LANGUAGES, TARGET_LANGUAGES, TRANSLATION_ENGINE, TRANSLATION_PROMPT_VERSION } from './shared';
 import {
   abortIfNeeded, sha256, translatableBlocks,
   type ContentRun, type DocumentAsset, type DocumentBlock,
@@ -187,7 +187,7 @@ export async function translateStructured(
   if (!TARGET_LANGUAGES.some(([code]) => code === options.target) ||
       (options.source && !SOURCE_LANGUAGES.some(([code]) => code === options.source)) ||
       (options.source && options.target.split('-')[0] === options.source)) fail('Selecione idiomas válidos e diferentes para a tradução.');
-  const engine = `${TRANSLATION_MODEL}:${TRANSLATION_PROMPT_VERSION}`;
+  const engine = `${TRANSLATION_ENGINE}:${TRANSLATION_PROMPT_VERSION}`;
   if (!state.completed || state.sourceHash !== document.sourceHash || state.sourceLanguage !== options.source ||
       state.targetLanguage !== options.target || state.engine !== engine) {
     state.completed = {};

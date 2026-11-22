@@ -1,5 +1,5 @@
 import { PDFDocument, PDFName, PDFNumber, degrees } from 'pdf-lib';
-import type { OcrResult } from './ocr-contract';
+import { OCR_ENGINE, type OcrResult } from './ocr-contract';
 import { pdfSourceOptions } from './pdf-options';
 import {
   SUMMARY_VERSION, SUMMARY_MAX_FILE_BYTES, SUMMARY_MAX_PAGES, SUMMARY_SECTIONS, SUMMARY_LABELS,
@@ -89,7 +89,7 @@ export function batchSummarySources(sources: SummarySource[]): SummarySource[][]
 }
 function parseOcr(value: unknown): OcrResult {
   const r=value as OcrResult;
-  if (!r || typeof r.model!=='string' || r.usage?.pages!==1 || !r.page || !Array.isArray(r.page.blocks) || r.page.blocks.length>5_000 ||
+  if (!r || r.model!==OCR_ENGINE || r.usage?.pages!==1 || !r.page || !Array.isArray(r.page.blocks) || r.page.blocks.length>5_000 ||
       ![r.page.width,r.page.height].every(n=>Number.isFinite(n)&&n>0&&n<=100_000) ||
       !r.page.blocks.every(b=>b && typeof b.type==='string' && typeof b.content==='string' && b.content.length<=250_000 &&
         !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(b.content) &&

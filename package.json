@@ -1,5 +1,6 @@
 {
   "name": "lume-tradutor",
+  "description": "Tradução de textos e artigos em PDF, com revisão de layout, exportação em Word e PDF e resumos com referências às páginas de origem.",
   "private": true,
   "version": "0.1.0",
   "type": "module",

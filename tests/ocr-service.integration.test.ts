@@ -1,19 +1,20 @@
 import { createRequire } from 'node:module';
 import { PDFDocument } from 'pdf-lib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { recognizePdf } from '../netlify/functions/_shared/mistral';
-import { layoutFromMistral } from '../src/ocr-layout';
+import { recognizePdf } from '../netlify/functions/_shared/ocr-service';
+import { layoutFromOcr } from '../src/ocr-layout';
 
-// Opt-in only: RUN_MISTRAL_OCR_TEST=1 and MISTRAL_API_KEY must be supplied by
-// the caller. This sends one synthetic scanned page to Mistral and has API cost.
+// Opt-in only: RUN_OCR_INTEGRATION_TEST=1 and the server OCR settings must be supplied by
+// the caller. This sends one synthetic scanned page to the OCR service and may have a cost.
 // Ordinary tests and the browser fixture use simulated responses instead.
 afterEach(() => vi.unstubAllGlobals());
 
-describe('real Mistral OCR API', () => {
-  it.skipIf(process.env.RUN_MISTRAL_OCR_TEST !== '1')('recognizes a synthetic scanned page with structured regions', async () => {
-    const key = process.env.MISTRAL_API_KEY?.trim();
-    expect(key, 'Configure MISTRAL_API_KEY antes de ativar o teste real.').toBeTruthy();
-    vi.stubGlobal('Netlify', { env: { get: (name: string) => name === 'MISTRAL_API_KEY' ? key : process.env[name] } });
+describe('live OCR service', () => {
+  it.skipIf(process.env.RUN_OCR_INTEGRATION_TEST !== '1')('recognizes a synthetic scanned page with structured regions', async () => {
+    for (const name of ['OCR_API_KEY', 'OCR_API_URL', 'OCR_MODEL']) {
+      expect(Boolean(process.env[name]?.trim()), 'Configure ' + name + ' antes de ativar o teste real.').toBe(true);
+    }
+    vi.stubGlobal('Netlify', undefined);
     const require = createRequire(import.meta.url), pdfRequire = createRequire(require.resolve('pdfjs-dist/package.json'));
     const { createCanvas } = pdfRequire('@napi-rs/canvas');
     const canvas = createCanvas(1200, 1600), ctx = canvas.getContext('2d');
@@ -30,8 +31,8 @@ describe('real Mistral OCR API', () => {
     const pdf = await PDFDocument.create(), image = await pdf.embedPng(canvas.toBuffer('image/png'));
     pdf.addPage([600, 800]).drawImage(image, { x: 0, y: 0, width: 600, height: 800 });
     const result = await recognizePdf(await pdf.save(), new AbortController().signal);
-    const layout = layoutFromMistral(result, 600, 800);
-    expect(result.model).toMatch(/^mistral-ocr-/);
+    const layout = layoutFromOcr(result, 600, 800);
+    expect(result.model).toBe('ocr-v1');
     expect(result.usage.pages).toBe(1);
     expect(layout.regions.map(r => r.text).join(' ')).toMatch(/experiment measures pressure/i);
     expect(layout.usableCharacters).toBeGreaterThan(100);

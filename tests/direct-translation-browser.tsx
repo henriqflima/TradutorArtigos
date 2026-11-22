@@ -2,7 +2,7 @@ import { StrictMode, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PDFDocument, StandardFonts } from 'pdf-lib';
 import StructuredTranslation from '../src/StructuredTranslation';
-import type { OcrResult } from '../src/ocr-contract';
+import { OCR_ENGINE, type OcrResult } from '../src/ocr-contract';
 import '../src/styles.css';
 
 const parameters = new URLSearchParams(location.search);
@@ -15,7 +15,7 @@ const blockCount = scenario === 'paused' ? 6 : 2;
 const text = (index: number) => index === 0
   ? 'The measured relation $x$ describes the sample under controlled experimental conditions.'
   : `The measured observation ${index + 1} describes the sample and preserves the evidence from the original article.`;
-const recognition: OcrResult = { model: 'mistral-ocr-4-1', usage: { pages: 1 }, page: {
+const recognition: OcrResult = { model: OCR_ENGINE, usage: { pages: 1 }, page: {
   width: 600, height: 800, confidence: 98,
   blocks: Array.from({ length: blockCount }, (_, index) => ({
     type: 'text', x: 40, y: 60 + index * 90, width: 520, height: 65,
@@ -110,7 +110,7 @@ function Fixture({ file }: { file: File }) {
   const [activeFile, setActiveFile] = useState(file);
   return <>{scenario === 'file-replacement' && <button id="replace-document" onClick={() => { void createFixture(true).then(setActiveFile); }}>Trocar documento durante a operação</button>}<StructuredTranslation file={activeFile} source="EN" target="PT-BR" code={code} onCodeChange={setCode}
     workflow={scenario === 'review' ? 'review' : 'direct'} configured={scenario !== 'unavailable'}
-    ocrConfigured ocrModel="mistral-ocr-latest" accessRequired onClose={() => {}}/></>;
+    ocrConfigured ocrModel={OCR_ENGINE} accessRequired onClose={() => {}}/></>;
 }
 window.directUiReady = createFixture().then(file => {
   createRoot(document.querySelector('#root')!).render(<StrictMode><Fixture file={file}/></StrictMode>);

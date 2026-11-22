@@ -3,7 +3,7 @@ import { PDFDocument, StandardFonts } from 'pdf-lib';
 import { getDocument } from 'pdfjs-dist';
 import StructuredTranslation from '../src/StructuredTranslation';
 import { pdfSourceOptions } from '../src/pdf-options';
-import type { OcrBlock, OcrResult } from '../src/ocr-contract';
+import { OCR_ENGINE, type OcrBlock, type OcrResult } from '../src/ocr-contract';
 
 declare global {
   interface Window { structuredUiReady: Promise<void> }
@@ -52,7 +52,7 @@ window.fetch = async (input, init) => {
     { type: 'image', x: 74, y: 417, width: 230, height: 75, content: '', confidence: null },
     recognizedText('Figure 2. Experimental trend.', 74, 283, 230, 10, 'caption'),
   ];
-  const result: OcrResult = { model: 'mistral-ocr-4-1', usage: { pages: 1 },
+  const result: OcrResult = { model: OCR_ENGINE, usage: { pages: 1 },
     page: { width: 612, height: 792, confidence: 99, blocks } };
   return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
 };

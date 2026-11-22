@@ -1,13 +1,12 @@
 import type { Config } from '@netlify/functions';
 import { PDFDocument } from 'pdf-lib';
 import { MAX_OCR_REQUEST_BYTES } from '../../src/ocr-contract.js';
-import { failure, HttpError, json, readBounded } from './_shared/http.js';
-import { recognizePdf } from './_shared/mistral.js';
-import { authorizeSummary } from './_shared/summary-openai.js';
+import { authorize, failure, HttpError, json, readBounded } from './_shared/http.js';
+import { recognizePdf } from './_shared/ocr-service.js';
 
 export default async (req: Request) => {
   try {
-    authorizeSummary(req, 'mistral');
+    authorize(req, 'ocr');
     if (req.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/pdf') throw new HttpError(415, 'Envie uma página PDF para extrair as evidências do resumo.');
     const bytes = await readBounded(req, MAX_OCR_REQUEST_BYTES, req.signal);
     if (new TextDecoder('ascii').decode(bytes.subarray(0, 5)) !== '%PDF-') throw new HttpError(400, 'O arquivo não é um PDF válido.');

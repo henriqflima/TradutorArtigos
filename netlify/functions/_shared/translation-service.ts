@@ -1,6 +1,6 @@
-import { TRANSLATION_MODEL, TRANSLATION_PROMPT_VERSION } from '../../../src/shared.js';
+import { TRANSLATION_PROMPT_VERSION } from '../../../src/shared.js';
 import { parseTranslationMarkup, type Marker } from '../../../src/translation-markup.js';
-import { HttpError, env, readBounded } from './http.js';
+import { HttpError, readBounded, requireProcessingService } from './http.js';
 
 type SourceBlock = { id: string; xml: string; markers: Map<string, Marker> };
 type Options = { source: string; target: string; context: string };
@@ -28,6 +28,7 @@ Protected elements may move only as needed for the translated sentence; keep adj
 Return only the JSON object defined by the schema: translations containing exactly one {id, xml} entry per input block, with no additional blocks.`;
 
 export async function translateXmlBlocks(blocks: SourceBlock[], options: Options, signal: AbortSignal): Promise<string[]> {
+  const { key, model, url } = requireProcessingService('translation');
   // This project's buffered function is terminated at 30s. Leave enough time
   // to return a useful JSON error, including when the upstream body stalls.
   const deadline = AbortSignal.timeout(25_000);
@@ -37,12 +38,12 @@ export async function translateXmlBlocks(blocks: SourceBlock[], options: Options
     : 'Não foi possível confirmar se o serviço de tradução processou este lote. Confira a conexão antes de repetir.');
   let provider: Response;
   try {
-    provider = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${env('OPENAI_API_KEY')}`, 'Content-Type': 'application/json' },
+    provider = await fetch(url, {
+      method: 'POST', redirect: 'error',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       signal: providerSignal,
       body: JSON.stringify({
-        model: TRANSLATION_MODEL,
+        model,
         store: false,
         reasoning: { effort: 'medium' },
         max_output_tokens: 16_384,

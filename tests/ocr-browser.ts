@@ -4,7 +4,7 @@ import { getDocument } from 'pdfjs-dist';
 import { analyzePdf, cropPdfRegion, rebuildDocument } from '../src/structured-analyze';
 import { blockText, sha256, type TranslatedDocument } from '../src/structured-document';
 import { createStructuredDocx, createStructuredPdf, validateStructuredSource } from '../src/structured-export';
-import type { OcrBlock, OcrResult } from '../src/ocr-contract';
+import { OCR_ENGINE, type OcrBlock, type OcrResult } from '../src/ocr-contract';
 
 const output = document.querySelector<HTMLElement>('#result')!;
 const checks: string[] = [];
@@ -18,7 +18,7 @@ async function rejects(action: () => Promise<unknown>, message: RegExp) {
 const block = (type: string, x: number, y: number, width: number, height: number, content: string): OcrBlock =>
   ({ type, x, y, width, height, content, confidence: type === 'image' ? null : 97 });
 const recognized: OcrResult = {
-  model: 'mistral-ocr-4-1', usage: { pages: 1 }, page: { width: 1200, height: 1600, confidence: 96, blocks: [
+  model: OCR_ENGINE, usage: { pages: 1 }, page: { width: 1200, height: 1600, confidence: 96, blocks: [
     block('title', 80, 60, 1040, 60, '# Scientific scan in two columns'),
     block('text', 80, 180, 480, 130, 'Left paragraph first. The experiment measures pressure and temperature under controlled conditions.'),
     block('text', 80, 330, 480, 160, 'The measured mass obeys $E = mc^2$ under controlled conditions.'),
@@ -32,9 +32,9 @@ const recognized: OcrResult = {
   ] },
 };
 const nativeRecognized: OcrResult = {
-  model: 'mistral-ocr-4-1', usage: { pages: 1 }, page: { width: 1200, height: 1600, confidence: 98, blocks: [
-    block('title', 80, 100, 1040, 50, '# Mistral authoritative native page'),
-    block('text', 80, 190, 1040, 100, 'Mistral recognized this selectable PDF. Its authoritative result replaces the local embedded text.'),
+  model: OCR_ENGINE, usage: { pages: 1 }, page: { width: 1200, height: 1600, confidence: 98, blocks: [
+    block('title', 80, 100, 1040, 50, '# OCR authoritative native page'),
+    block('text', 80, 190, 1040, 100, 'OCR recognized this selectable PDF. Its authoritative result replaces the local embedded text.'),
   ] },
 };
 
@@ -69,7 +69,7 @@ async function mixedFixture(): Promise<File> {
   const pdf = await PDFDocument.create(), font = await pdf.embedFont(StandardFonts.Helvetica);
   const native = pdf.addPage([600, 800]);
   native.drawText('Native digital page', { x: 40, y: 730, size: 17, font });
-  native.drawText('LOCAL ONLY embedded text must not bypass Mistral recognition.', { x: 40, y: 690, size: 10, font });
+  native.drawText('LOCAL ONLY embedded text must not bypass OCR.', { x: 40, y: 690, size: 10, font });
   native.drawText('Methods and scientific observations are extracted directly from the original PDF.', { x: 40, y: 665, size: 10, font });
   const image = await pdf.embedPng(await scannedPng());
   pdf.addPage([600, 800]).drawImage(image, { x: 0, y: 0, width: 600, height: 800 });
@@ -116,8 +116,8 @@ try {
   report('PASS: limites de 7 MB e 50 páginas verificados antes de qualquer envio.');
 
   const file = await mixedFixture();
-  const options = { code: 'fixture-access', ocrConfigured: true, ocrModel: 'mistral-ocr-latest' };
-  await rejects(() => analyzePdf(file, () => {}, undefined, { ...options, ocrConfigured: false }), /Mistral|OCR/);
+  const options = { code: 'fixture-access', ocrConfigured: true, ocrModel: OCR_ENGINE };
+  await rejects(() => analyzePdf(file, () => {}, undefined, { ...options, ocrConfigured: false }), /serviço de reconhecimento de texto/);
   assert(Number(ocrCalls) === 0, 'Uma análise sem OCR configurado iniciou envio.');
   const nativePdf = await PDFDocument.create();
   const sourcePdf = await PDFDocument.load(await file.arrayBuffer());
@@ -137,8 +137,8 @@ try {
   assert(ocrCalls === 2, `Esperadas duas chamadas OCR, obtidas ${ocrCalls}. ${JSON.stringify(manifest.issues)}`);
   assert(sentPages.join(',') === 'native,scan', `Nem todas as páginas foram enviadas em ordem: ${sentPages.join(',')}`);
   assert(manifest.pages.length === 2, 'PDF misto perdeu páginas.');
-  assert(manifest.blocks.some(b => b.page === 1 && blockText(b).includes('Mistral authoritative native page')), 'Resposta OCR da página nativa ausente.');
-  assert(!manifest.blocks.some(b => /Native digital page|LOCAL ONLY/.test(blockText(b))), 'Texto nativo foi usado no lugar da resposta Mistral.');
+  assert(manifest.blocks.some(b => b.page === 1 && blockText(b).includes('OCR authoritative native page')), 'Resposta OCR da página nativa ausente.');
+  assert(!manifest.blocks.some(b => /Native digital page|LOCAL ONLY/.test(blockText(b))), 'Texto nativo foi usado no lugar da resposta do OCR.');
   const scan = manifest.blocks.filter(b => b.page === 2), text = scan.map(blockText).join('\n');
   assert(text.indexOf('Left paragraph first') < text.indexOf('The measured mass obeys') &&
     text.indexOf('The measured mass obeys') < text.indexOf('Right paragraph last'), 'Ordem nativa de duas colunas foi alterada.');
@@ -152,7 +152,7 @@ try {
     `Bloqueio inesperado: ${JSON.stringify(manifest.issues)}`);
   assert(manifest.issues.some(i => i.id === 'ocr-inline-math-p2-ocr-2' && i.severity === 'warning'), 'Fórmula inline não gerou aviso de revisão.');
   await validateStructuredSource(manifest);
-  report('PASS: páginas nativas e digitalizadas passam pela Mistral; texto autoritativo, ordem de duas colunas e três recortes preservados.');
+  report('PASS: páginas nativas e digitalizadas passam pelo OCR; texto autoritativo, ordem de duas colunas e três recortes preservados.');
   report('PASS: fórmula inline gera somente aviso e permite validação para tradução sem recorte manual.');
 
   const repeated = await analyzePdf(file, () => {}, undefined, options);
@@ -194,7 +194,7 @@ try {
       !exportedText.includes('mc^2'), 'PDF perdeu texto selecionável ou duplicou fórmula.');
   } finally { await exported.destroy(); }
   const links = document.querySelector('#artifacts')!;
-  for (const [name, blob] of [['mistral-fixture.docx', docx], ['mistral-fixture.pdf', pdf]] as const) {
+  for (const [name, blob] of [['ocr-fixture.docx', docx], ['ocr-fixture.pdf', pdf]] as const) {
     const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = name;
     link.textContent = name; links.append(link, document.createTextNode(' '));
   }
@@ -206,7 +206,7 @@ try {
   const partial = await analyzePdf(partialFile, () => {}, undefined, options);
   failScan = false;
   assert(partial.issues.some(i => i.id === 'ocr-failed-2' && i.severity === 'blocking'), 'Falha na segunda página não foi bloqueada.');
-  assert(partial.blocks.some(b => b.page === 1 && blockText(b).includes('Mistral authoritative native page')), 'Falha posterior perdeu a primeira página reconhecida.');
+  assert(partial.blocks.some(b => b.page === 1 && blockText(b).includes('OCR authoritative native page')), 'Falha posterior perdeu a primeira página reconhecida.');
   const resumed = await analyzePdf(partialFile, () => {}, undefined, options);
   assert(ocrCalls === callsBeforeFailure + 3, 'Retomada reenviou a primeira página já concluída ou repetiu automaticamente a falha.');
   assert(!resumed.issues.some(i => i.id.startsWith('ocr-failed-')), 'Retomada concluída manteve falhas de OCR antigas.');

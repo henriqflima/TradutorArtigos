@@ -1,8 +1,8 @@
 import type { Config } from '@netlify/functions';
 import { Buffer } from 'node:buffer';
 import { SUMMARY_SECTIONS, parseSummaryExtraction, validSummarySource, type SummarySource } from '../../src/summary-contract.js';
-import { failure, HttpError, json } from './_shared/http.js';
-import { authorizeSummary, objectSchema, stringsSchema, summaryInput, summaryResponse } from './_shared/summary-openai.js';
+import { authorize, failure, HttpError, json } from './_shared/http.js';
+import { objectSchema, stringsSchema, summaryInput, summaryResponse } from './_shared/summary-service.js';
 import { createSummaryValueMatcher, recoverSummaryQuote } from './_shared/summary-evidence-validation.js';
 
 const evidenceSchema = objectSchema({
@@ -33,7 +33,7 @@ function validImage(value: unknown): value is string {
 
 export default async (req: Request) => {
   try {
-    authorizeSummary(req);
+    authorize(req, 'summary');
     const input = await summaryInput(req, ['sources', 'image'], 2_500_000);
     if (!Array.isArray(input.sources) || input.sources.length < 1 || input.sources.length > 300 || !input.sources.every(validSummarySource)) {
       throw new HttpError(400, 'Envie de 1 a 300 regiões válidas da mesma página do artigo.');

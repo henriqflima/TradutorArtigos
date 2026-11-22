@@ -2,7 +2,7 @@ import type { Config } from '@netlify/functions';
 import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from '../../src/shared.js';
 import { readSourceMarkup } from '../../src/translation-markup.js';
 import { HttpError, authorize, failure, headers, readBounded } from './_shared/http.js';
-import { ProviderError, translateXmlBlocks } from './_shared/openai.js';
+import { ProviderError, translateXmlBlocks } from './_shared/translation-service.js';
 
 const MAX_REQUEST_BYTES = 32_000;
 const MAX_TEXTS = 8;

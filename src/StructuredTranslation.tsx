@@ -87,7 +87,7 @@ export default function StructuredTranslation({ file, source, target, code, conf
     setTranslation(null); setTranslationReviewed(false); setEditingRegion(false); setShowSourceReview(!direct);
     cache.current = { completed: {} }; mergedBlocks.current.clear();
     clearArtifacts();
-    setPhase('analyzing'); setMessage('Preparando todas as páginas do PDF para o Mistral OCR…'); setError('');
+    setPhase('analyzing'); setMessage('Preparando as páginas do PDF para o reconhecimento de texto…'); setError('');
     let sourcePdf: PDFDocumentProxy | undefined;
     let loading: { destroy: () => Promise<void> } | undefined;
     void (async () => {
@@ -406,7 +406,7 @@ export default function StructuredTranslation({ file, source, target, code, conf
     <header className="structured-header"><button className="structured-secondary" disabled={busy} onClick={onClose}><ArrowLeft size={17}/>Voltar à seleção</button><span className="version-pill">PDF · até {formatFileSize(MAX_FILE_BYTES)} · {MAX_PDF_PAGES} páginas</span></header>
     <div className="eyebrow"><span/> IMAGENS E EQUAÇÕES PRESERVADAS</div>
     <h1>{direct ? 'Tradução direta do artigo' : 'Confira o original. Traduza o texto.'}</h1>
-    <p className="structured-intro">{direct ? 'Todas as páginas passam pelo Mistral OCR e seguem automaticamente para tradução, sem conferência prévia. O PDF procura preservar a organização do original, e você pode comparar o resultado depois. O Word é montado em uma coluna.' : 'Todas as páginas são processadas pelo Mistral OCR, inclusive as que têm texto selecionável. Confira cada página antes de traduzir; o reconhecimento pode conter erros. O PDF procura preservar a organização do original, com imagens e equações preservadas. O Word é montado em uma coluna.'}</p>
+    <p className="structured-intro">{direct ? 'O reconhecimento de texto processa todas as páginas e envia o texto extraído automaticamente para tradução. O PDF procura preservar a organização do original, e você pode comparar o resultado depois. O Word é montado em uma coluna.' : 'O serviço de reconhecimento de texto processa todas as páginas, inclusive as que têm texto selecionável. Confira cada página antes de traduzir; o reconhecimento pode conter erros. O PDF procura preservar a organização do original, com imagens e equações preservadas. O Word é montado em uma coluna.'}</p>
     <p className="structured-file"><strong>{file.name}</strong><span>{formatFileSize(file.size)} · {sourceLabel} → {targetLabel}</span></p>
     <ol className={`structured-steps${direct ? ' direct-steps' : ''}`} aria-label="Etapas da tradução">{(direct ? ['Analisar PDF', 'Traduzir texto', 'Baixar arquivos'] : ['Analisar PDF', 'Conferir páginas', 'Traduzir texto', 'Baixar arquivos']).map((label, index) => <li className={index < currentStep ? 'complete' : index === currentStep ? 'active' : ''} aria-current={index === currentStep ? 'step' : undefined} key={label}><span>{index < currentStep ? <Check size={14}/> : index + 1}</span>{label}</li>)}</ol>
     {error && <p className="notice error-notice" role="alert">{error}</p>}

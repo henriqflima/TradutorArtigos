@@ -2,11 +2,13 @@ node_modules/
 .pnpm-store/
 dist/
 .netlify/
+.vercel/
 .env
 .env.*
 !.env.example
 *.tsbuildinfo
 .sites-runtime/
 test-results/
+.tmp/
 tmp/
 output/

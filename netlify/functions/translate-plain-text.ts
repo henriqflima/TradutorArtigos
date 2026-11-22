@@ -3,7 +3,7 @@ import { SOURCE_LANGUAGES, TARGET_LANGUAGES } from '../../src/shared.js';
 import { validatePlainText } from '../../src/plain-text.js';
 import { parseTranslationMarkup } from '../../src/translation-markup.js';
 import { HttpError, authorize, failure, headers, readBounded } from './_shared/http.js';
-import { ProviderError, translateXmlBlocks } from './_shared/openai.js';
+import { ProviderError, translateXmlBlocks } from './_shared/translation-service.js';
 
 const FIELDS = new Set(['text', 'source_lang', 'target_lang']);
 

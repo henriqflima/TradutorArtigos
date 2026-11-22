@@ -1,6 +1,6 @@
 export const MAX_FILE_BYTES = 7_000_000;
 export const MAX_PDF_PAGES = 50;
-export const TRANSLATION_MODEL = 'gpt-6.1-terra';
+export const TRANSLATION_ENGINE = 'translation-v1';
 export const TRANSLATION_PROMPT_VERSION = 'scientific-translation-v1';
 export const EXTENSIONS = ['pdf'];
 export const TARGET_LANGUAGES = [

@@ -1,8 +1,8 @@
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import { pdfSourceOptions } from './pdf-options';
 import { MAX_FILE_BYTES, MAX_PDF_PAGES, formatFileSize } from './shared';
-import { createMistralOcr, type OcrOptions } from './mistral-ocr';
-import { layoutFromMistral, blocksFromMistral, isVisualRegion, ocrAssetId, type OcrLayout } from './ocr-layout';
+import { createOcrClient, type OcrOptions } from './ocr-client';
+import { layoutFromOcr, blocksFromOcr, isVisualRegion, ocrAssetId, type OcrLayout } from './ocr-layout';
 import { appearanceForBlock, nativeTextSpans, type NativeTextSpan } from './pdf-appearance';
 import { associateCaptions } from './caption-links';
 import { abortIfNeeded, sha256, type DocumentAsset, type DocumentBlock, type DocumentIssue, type SourceRect, type StructuredDocument } from './structured-document';
@@ -25,7 +25,7 @@ function issue(id: string, page: number, message: string, severity: DocumentIssu
   return { id, page, message, severity, ...(blockId ? { blockId } : {}) };
 }
 
-/** PDF.js validates and renders the original; extracted prose comes only from Mistral. */
+/** PDF.js validates and renders the original; extracted prose comes only from the OCR service. */
 async function openPdf(data: Uint8Array, signal?: AbortSignal) {
   abortIfNeeded(signal);
   const [pdfjs, worker] = await Promise.all([import('pdfjs-dist'), import('pdfjs-dist/build/pdf.worker.min.mjs?url')]);
@@ -61,7 +61,7 @@ function buildDocument(analysis: Analysis, assets: readonly DocumentAsset[]): St
   for (let index = 0; index < analysis.pages.length; index++) {
     const page = analysis.pages[index], number = index + 1;
     if (!page.ocr) continue;
-    const result = blocksFromMistral(page.ocr, number, assets.filter(asset => asset.page === number));
+    const result = blocksFromOcr(page.ocr, number, assets.filter(asset => asset.page === number));
     const roles = new Map(page.ocr.regions.map(region => [`p${number}-ocr-${region.index}`, region.type]));
     for (const block of result.blocks) {
       block.sourceRole = roles.get(block.id);
@@ -149,7 +149,7 @@ export async function analyzePdf(file: File, onProgress: (message: string) => vo
   const bytes = new Uint8Array(await file.arrayBuffer());
   if (new TextDecoder('ascii').decode(bytes.subarray(0, 5)) !== PDF_SIGNATURE) throw new Error('O arquivo não é um PDF válido.');
   const sourceHash = await sha256(bytes), pdf = await openPdf(bytes, signal);
-  let ocr: ReturnType<typeof createMistralOcr> | undefined;
+  let ocr: ReturnType<typeof createOcrClient> | undefined;
   try {
     if (pdf.numPages < 1 || pdf.numPages > MAX_PDF_PAGES) throw new Error(`O PDF deve ter no máximo ${MAX_PDF_PAGES} páginas.`);
     const pages: SourcePage[] = [];
@@ -165,8 +165,8 @@ export async function analyzePdf(file: File, onProgress: (message: string) => vo
       pages.push({ width: viewport.width, height: viewport.height });
       page.cleanup();
     }
-    if (options.ocrConfigured !== true) throw new Error('O Mistral OCR precisa estar configurado para analisar qualquer PDF. Verifique a configuração do serviço e tente novamente.');
-    ocr = createMistralOcr(file, options, onProgress, signal);
+    if (options.ocrConfigured !== true) throw new Error('A análise de PDFs depende da configuração do serviço de reconhecimento de texto. Verifique a configuração do serviço e tente novamente.');
+    ocr = createOcrClient(file, options, onProgress, signal);
     const issues: DocumentIssue[] = [];
     let failed = false;
     for (let index = 0; index < pages.length; index++) {
@@ -176,12 +176,12 @@ export async function analyzePdf(file: File, onProgress: (message: string) => vo
         issues.push(issue(`ocr-failed-${number}`, number, 'O OCR desta página aguarda retomada após a falha na página anterior.', 'blocking'));
         continue;
       }
-      onProgress(`Processando todas as páginas com Mistral OCR: página ${number} de ${pages.length}…`);
+      onProgress(`Reconhecendo o texto da página ${number} de ${pages.length}…`);
       try {
-        const recognition = layoutFromMistral(await ocr.recognize(number), page.width, page.height);
+        const recognition = layoutFromOcr(await ocr.recognize(number), page.width, page.height);
         page.ocr = recognition;
         issues.push(issue(`ocr-review-${number}`, number,
-          `Texto reconhecido por Mistral OCR (${recognition.model}; ${recognition.confidence === null ? 'confiança não informada' : `confiança média ${Math.round(recognition.confidence)}%`}; ${recognition.lowConfidenceBlocks} blocos com baixa confiança). Confira o texto, as fórmulas e a ordem de leitura. Se desejar manter a aparência de uma fórmula, preserve-a como recorte do original.`));
+          `Texto reconhecido por OCR (${recognition.confidence === null ? 'confiança não informada' : `confiança média ${Math.round(recognition.confidence)}%`}; ${recognition.lowConfidenceBlocks} blocos com baixa confiança). Confira o texto, as fórmulas e a ordem de leitura. Se desejar manter a aparência de uma fórmula, preserve-a como recorte do original.`));
         if (!recognition.regions.length) {
           recognition.regions = [{ index: 0, type: 'image', rect: { x: 0, y: 0, width: page.width, height: page.height }, text: '', confidence: null }];
           issues.push(issue(`ocr-unusable-${number}`, number, 'O OCR não identificou conteúdo. A página foi preservada integralmente como imagem do original; se houver texto a traduzir, confira a legibilidade antes de continuar.'));
@@ -191,11 +191,11 @@ export async function analyzePdf(file: File, onProgress: (message: string) => vo
       } catch (error) {
         if (signal?.aborted) throw error;
         failed = true;
-        issues.push(issue(`ocr-failed-${number}`, number, `Falha no Mistral OCR: ${error instanceof Error ? error.message : 'erro desconhecido'}. Retome a análise para processar as páginas pendentes.`, 'blocking'));
+        issues.push(issue(`ocr-failed-${number}`, number, `Falha no reconhecimento de texto: ${error instanceof Error ? error.message : 'erro desconhecido'}. Retome a análise para processar as páginas pendentes.`, 'blocking'));
       }
     }
     // Native metrics enrich appearance only. A scan or a parsing failure retains
-    // the mandatory Mistral prose and conservative typographic defaults.
+    // the required OCR text and conservative typographic defaults.
     for (let index = 0; index < pages.length; index++) {
       abortIfNeeded(signal);
       if (!pages[index].ocr) continue;

@@ -132,7 +132,7 @@ async function run() {
     for (const source of report.pages) for (const destination of source.outputPages) assert(report.outputPages.find(page => page.outputPage === destination)?.sourcePages.includes(source.sourcePage), 'Mapeamento origem/destino inconsistente.');
     for (const destination of report.outputPages) for (const source of destination.sourcePages) assert(report.pages.find(page => page.sourcePage === source)?.outputPages.includes(destination.outputPage), 'Mapeamento destino/origem inconsistente.');
     status.dataset.status = 'passed';
-    status.textContent = `OK: ${input.document.blocks.length} blocos reais, texto completo sem perdas/duplicações por contagem de palavras, ${imageCount} objetos visuais, sem colisões ou saída dos limites.\nOriginal: ${original.numPages} páginas. PDF anterior: ${previous.numPages}. Nova montagem: ${translated.numPages}.\nConferir visualmente todas as páginas; este ensaio usa um manifest de diagnóstico anterior ao Mistral.`;
+    status.textContent = `OK: ${input.document.blocks.length} blocos reais, texto completo sem perdas/duplicações por contagem de palavras, ${imageCount} objetos visuais, sem colisões ou saída dos limites.\nOriginal: ${original.numPages} páginas. PDF anterior: ${previous.numPages}. Nova montagem: ${translated.numPages}.\nConferir visualmente todas as páginas; este ensaio usa um manifest de diagnóstico anterior ao fluxo atual de OCR.`;
   } catch (error) {
     status.dataset.status = 'failed'; status.textContent = error instanceof Error ? error.stack || error.message : String(error);
   } finally { await Promise.allSettled(loaded.map(pdf => pdf.destroy())); button.disabled = false; }

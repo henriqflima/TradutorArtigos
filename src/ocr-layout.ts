@@ -12,7 +12,7 @@ function contentText(content: string) {
     .replace(/`([^`\n]+)`/g, '$1').trim();
 }
 
-export function layoutFromMistral(result: OcrResult, width: number, height: number): OcrLayout {
+export function layoutFromOcr(result: OcrResult, width: number, height: number): OcrLayout {
   const sx = width / result.page.width, sy = height / result.page.height;
   if (![sx, sy].every(n => Number.isFinite(n) && n > 0)) throw new Error('O OCR retornou dimensões inválidas.');
   const regions = result.page.blocks.map((block, index): OcrRegion => ({ index, type: block.type,
@@ -45,7 +45,7 @@ function assetBlock(asset: DocumentAsset): DocumentBlock {
 }
 
 /** Use provider reading order and whole-block geometry, never fabricated word boxes. */
-export function blocksFromMistral(layout: OcrLayout, page: number, assets: readonly DocumentAsset[]) {
+export function blocksFromOcr(layout: OcrLayout, page: number, assets: readonly DocumentAsset[]) {
   const issues: DocumentIssue[] = [], blocks: { block: DocumentBlock; order: number }[] = [];
   const used = new Set<string>();
   const problem = (id: string, message: string, blockId?: string) => issues.push({ id, page, message, severity: 'blocking', blockId });

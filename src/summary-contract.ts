@@ -1,6 +1,6 @@
 /** Summary-only data model. It deliberately has no dependency on translation contracts. */
 export const SUMMARY_VERSION = 'article-evidence-v1';
-export const SUMMARY_MODEL = 'gpt-6.1-terra';
+export const SUMMARY_ENGINE = 'summary-v1';
 export const SUMMARY_MAX_FILE_BYTES = 7_000_000;
 export const SUMMARY_MAX_PAGES = 50;
 export const SUMMARY_SECTIONS = ['objective', 'technical', 'methodology', 'results'] as const;

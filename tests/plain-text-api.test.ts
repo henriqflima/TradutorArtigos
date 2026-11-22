@@ -4,7 +4,7 @@ import translateText from '../netlify/functions/translate-plain-text';
 let settings: Record<string, string>;
 const provider = vi.fn();
 beforeEach(() => {
-  settings = { OPENAI_API_KEY: 'test-key' };
+  settings = { LANGUAGE_API_KEY: 'test-key', LANGUAGE_API_URL: 'https://processing.test/v1/responses', TRANSLATION_MODEL: 'translation-model' };
   vi.stubGlobal('Netlify', { env: { get: (name: string) => settings[name] } });
   vi.stubGlobal('fetch', provider);
   provider.mockReset();
@@ -28,7 +28,7 @@ describe('plain text API', () => {
     expect(await response.json()).toEqual({ translations: [text] });
     expect(response.headers.get('cache-control')).toContain('no-store');
     const body = JSON.parse(String(provider.mock.calls[0][1].body));
-    expect(body).toMatchObject({ model: 'gpt-6.1-terra', reasoning: { effort: 'medium' }, store: false });
+    expect(body).toMatchObject({ model: 'translation-model', reasoning: { effort: 'medium' }, store: false });
     const input = JSON.parse(body.input);
     expect(input.blocks[0].xml).toContain('&lt;img');
     expect(input.source_language).toBe('Inglês');

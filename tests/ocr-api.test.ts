@@ -2,14 +2,14 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { PDFDocument, degrees } from 'pdf-lib';
 import ocr from '../netlify/functions/ocr';
 import config from '../netlify/functions/config';
-import { parseMistralOcr, recognizePdf } from '../netlify/functions/_shared/mistral';
-import { MAX_OCR_REQUEST_BYTES, OCR_TIMEOUT_MS } from '../src/ocr-contract';
+import { parseOcrResponse, recognizePdf } from '../netlify/functions/_shared/ocr-service';
+import { MAX_OCR_REQUEST_BYTES, OCR_ENGINE, OCR_TIMEOUT_MS } from '../src/ocr-contract';
 
 let settings: Record<string, string>;
 let pdf: Uint8Array;
 const provider = vi.fn();
 const source = () => ({
-  model: 'mistral-ocr-4-1', usage_info: { pages_processed: 1, doc_size_bytes: 100 },
+  model: 'ocr-model-specific', usage_info: { pages_processed: 1, doc_size_bytes: 100 },
   pages: [{ index: 0, markdown: '# Results\nMeasured prose.', dimensions: { width: 1700, height: 2200, dpi: 200 },
     confidence_scores: { average_page_confidence_score: 0.98, minimum_page_confidence_score: 0.3 },
     blocks: [
@@ -33,19 +33,19 @@ beforeAll(async () => {
   pdf = await document.save();
 });
 beforeEach(() => {
-  settings = { MISTRAL_API_KEY: 'test-mistral-secret' };
+  settings = { OCR_API_KEY: 'test-ocr-secret', OCR_API_URL: 'https://processing.test/v1/ocr', OCR_MODEL: 'ocr-model-default' };
   vi.stubGlobal('Netlify', { env: { get: (name: string) => settings[name] } });
   vi.stubGlobal('fetch', provider);
   provider.mockReset().mockImplementation(() => Response.json(source()));
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
-describe('Mistral OCR API', () => {
-  it('sends a single PDF using the latest model from the server and returns only normalized blocks', async () => {
+describe('OCR API', () => {
+  it('sends a single PDF using the configured server model and returns only normalized blocks', async () => {
     const response = await ocr(request());
     expect(response.status).toBe(200);
     const result = await response.json();
-    expect(result).toEqual({ model: 'mistral-ocr-4-1', usage: { pages: 1 }, page: {
+    expect(result).toEqual({ model: OCR_ENGINE, usage: { pages: 1 }, page: {
       width: 1700, height: 2200, confidence: 98,
       blocks: [
         { type: 'title', x: 100, y: 110, width: 600, height: 40, content: '# Results', confidence: 99 },
@@ -57,25 +57,27 @@ describe('Mistral OCR API', () => {
     expect(response.headers.get('netlify-cdn-cache-control')).toBe('no-store');
     expect(provider).toHaveBeenCalledTimes(1);
     const [url, init] = provider.mock.calls[0];
-    expect(url).toBe('https://api.mistral.ai/v1/ocr');
-    expect(init.headers.Authorization).toBe('Bearer test-mistral-secret');
+    expect(url).toBe('https://processing.test/v1/ocr');
+    expect(init.redirect).toBe('error');
+    expect(init.headers.Authorization).toBe('Bearer test-ocr-secret');
     const body = JSON.parse(init.body);
-    expect(body).toMatchObject({ model: 'mistral-ocr-latest', include_blocks: true,
+    expect(body).toMatchObject({ model: 'ocr-model-default', include_blocks: true,
       confidence_scores_granularity: 'block', include_image_base64: false });
     expect(body.document.type).toBe('document_url');
     expect(body.document.document_url).toBe(`data:application/pdf;base64,${Buffer.from(pdf).toString('base64')}`);
-    expect(JSON.stringify(result)).not.toContain('test-mistral-secret');
+    expect(JSON.stringify(result)).not.toContain('test-ocr-secret');
+    expect(JSON.stringify(result)).not.toContain('ocr-model-specific');
     expect(JSON.stringify(result)).not.toContain('doc_size_bytes');
   });
 
   it('reports independent OCR and translation configuration without exposing keys', async () => {
-    settings.MISTRAL_OCR_MODEL = 'mistral-ocr-4-1';
+    settings.OCR_MODEL = 'ocr-model-specific';
     const data = await (await config()).json();
-    expect(data).toMatchObject({ configured: false, ocr: { configured: true, provider: 'mistral', model: 'mistral-ocr-4-1' } });
-    expect(JSON.stringify(data)).not.toContain('test-mistral-secret');
+    expect(data).toMatchObject({ configured: false, ocr: { configured: true, provider: 'ocr', model: OCR_ENGINE } });
+    expect(JSON.stringify(data)).not.toMatch(/test-ocr-secret|ocr-model-specific|processing\.test/);
     expect((await ocr(request())).status).toBe(200);
-    expect(JSON.parse(provider.mock.calls[0][1].body).model).toBe('mistral-ocr-4-1');
-    settings = { OPENAI_API_KEY: 'translation-only' };
+    expect(JSON.parse(provider.mock.calls[0][1].body).model).toBe('ocr-model-specific');
+    settings = { LANGUAGE_API_KEY: 'translation-only', LANGUAGE_API_URL: 'https://processing.test/v1/responses', TRANSLATION_MODEL: 'translation-model' };
     expect((await ocr(request())).status).toBe(503);
     expect(provider).toHaveBeenCalledTimes(1);
   });
@@ -117,22 +119,22 @@ describe('Mistral OCR API', () => {
 
   it.each([[401, 503], [403, 503], [429, 429], [422, 422], [413, 422], [500, 502]])(
     'sanitizes provider status %i into %i without retrying', async (status, expected) => {
-      provider.mockResolvedValue(new Response('private PDF content and test-mistral-secret', { status }));
+      provider.mockResolvedValue(new Response('private PDF content and test-ocr-secret', { status }));
       const response = await ocr(request());
       expect(response.status).toBe(expected);
-      expect(await response.text()).not.toMatch(/private PDF content|test-mistral-secret/);
+      expect(await response.text()).not.toMatch(/private PDF content|test-ocr-secret/);
       expect(provider).toHaveBeenCalledTimes(1);
     });
 
-  it('retains bounded diagnostic identifiers and a category without returning provider prose or credentials', async () => {
-    const message = 'Requests rate limit exceeded. Private scientific PDF content and test-mistral-secret must remain private.';
+  it('reports the HTTP status and category without returning upstream diagnostic identifiers, prose or credentials', async () => {
+    const message = 'Requests rate limit exceeded. Private scientific PDF content and test-ocr-secret must remain private.';
     provider.mockResolvedValue(Response.json({ message, type: 'rate_limit_error', code: '1300', param: 'private document' },
-      { status: 429, headers: { 'X-Request-ID': 'diagnostic-123', Authorization: 'Bearer test-mistral-secret' } }));
+      { status: 429, headers: { 'X-Request-ID': 'diagnostic-123', Authorization: 'Bearer test-ocr-secret' } }));
     const response = await ocr(request());
     expect(response.status).toBe(429);
     expect(await response.json()).toEqual({
-      error: 'A API Mistral limitou o processamento (HTTP 429). Confira os limites de uso da conta e tente retomar o OCR.',
-      providerError: { provider: 'mistral', status: 429, code: '1300', type: 'rate_limit_error', reason: 'request_rate', requestId: 'diagnostic-123' },
+      error: 'O serviço de OCR atingiu um limite de uso (HTTP 429). Confira os limites da conta e tente retomar o reconhecimento.',
+      providerError: { provider: 'ocr', status: 429, reason: 'request_rate' },
     });
     expect(response.headers.get('cache-control')).toContain('no-store');
     expect(response.headers.get('netlify-cdn-cache-control')).toBe('no-store');
@@ -155,30 +157,25 @@ describe('Mistral OCR API', () => {
     provider.mockResolvedValue(Response.json({ message }, { status: 429 }));
     const error = await recognizePdf(pdf, new AbortController().signal).catch(error => error);
     expect(error.status).toBe(429);
-    expect(error.providerError).toEqual({ provider: 'mistral', status: 429, reason });
+    expect(error.providerError).toEqual({ provider: 'ocr', status: 429, reason });
     expect(error.message).not.toContain(message);
   });
 
-  it('omits malformed identifiers and credential reflections even in otherwise valid structured fields', async () => {
-    for (const value of ['test-mistral-secret', 'PREFIX-TEST-MISTRAL-SECRET-SUFFIX', 'private PDF content', '<script>', 'x'.repeat(101)]) {
+  it('omits identifiers and credential reflections even in otherwise valid structured fields', async () => {
+    for (const value of ['test-ocr-secret', 'provider-specific-identifier', 'PREFIX-TEST-OCR-SECRET-SUFFIX', 'private PDF content']) {
       provider.mockResolvedValueOnce(Response.json({ message: 'Unexpected failure', code: value, type: value, request_id: value },
         { status: 429, headers: { 'X-Request-ID': value } }));
       const response = await ocr(request());
       expect(response.status).toBe(429);
       const result = await response.json();
-      expect(result).toMatchObject({ providerError: { provider: 'mistral', status: 429, reason: 'unknown' } });
-      // None of these values are valid public identifiers, including the secret
-      // that would otherwise satisfy the alphanumeric identifier allowlist.
-      expect(result.providerError.code).toBeUndefined();
-      expect(result.providerError.type).toBeUndefined();
-      expect(result.providerError.requestId).toBeUndefined();
+      expect(result.providerError).toEqual({ provider: 'ocr', status: 429, reason: 'unknown' });
     }
   });
 
-  it('accepts nested documented diagnostics and bounded numeric codes', async () => {
+  it('classifies nested diagnostics without exposing their numeric codes', async () => {
     provider.mockResolvedValue(Response.json({ error: { code: 1301, type: 'rate_limit_error', message: 'Tokens per minute limit exceeded.', request_id: 'request-456' } }, { status: 429 }));
     const error = await recognizePdf(pdf, new AbortController().signal).catch(error => error);
-    expect(error.providerError).toEqual({ provider: 'mistral', status: 429, code: 1301, type: 'rate_limit_error', reason: 'token_rate', requestId: 'request-456' });
+    expect(error.providerError).toEqual({ provider: 'ocr', status: 429, reason: 'token_rate' });
   });
 
   it('keeps HTTP 429 when its diagnostic body is oversized or malformed and cancels an oversized stream', async () => {
@@ -190,7 +187,7 @@ describe('Mistral OCR API', () => {
       provider.mockResolvedValueOnce(response);
       const result = await ocr(request());
       expect(result.status).toBe(429);
-      expect(await result.json()).toMatchObject({ providerError: { provider: 'mistral', status: 429, reason: 'unknown' } });
+      expect(await result.json()).toMatchObject({ providerError: { provider: 'ocr', status: 429, reason: 'unknown' } });
     }
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(provider).toHaveBeenCalledTimes(3);
@@ -270,23 +267,23 @@ describe('Mistral OCR API', () => {
   });
 });
 
-describe('Mistral OCR response validation', () => {
+describe('OCR response validation', () => {
   it('retains unscored regions as null and accepts an actually blank page', () => {
     const data = source();
     delete (data.pages[0] as { confidence_scores?: unknown }).confidence_scores;
     delete (data.pages[0].blocks[0] as { confidence_scores?: unknown }).confidence_scores;
-    const result = parseMistralOcr(data);
+    const result = parseOcrResponse(data);
     expect(result.page.confidence).toBeNull();
     expect(result.page.blocks[0].confidence).toBeNull();
     data.pages[0].blocks = []; data.pages[0].markdown = '';
-    expect(parseMistralOcr(data).page.blocks).toEqual([]);
+    expect(parseOcrResponse(data).page.blocks).toEqual([]);
   });
 
   it.each([
     (data: any) => { data.pages = []; },
     (data: any) => { data.pages[0].index = 1; },
     (data: any) => { data.usage_info.pages_processed = 2; },
-    (data: any) => { data.model = 'unrelated-model'; },
+    (data: any) => { data.model = 'invalid model'; },
     (data: any) => { data.pages[0].dimensions.width = 0; },
     (data: any) => { data.pages[0].blocks = null; },
     (data: any) => { data.pages[0].blocks = []; },
@@ -297,6 +294,6 @@ describe('Mistral OCR response validation', () => {
     (data: any) => { data.pages[0].blocks[0].confidence_scores.average_content_confidence_score = 99; },
   ])('rejects incomplete or inconsistent data', mutate => {
     const data = source(); mutate(data);
-    expect(() => parseMistralOcr(data)).toThrow(/estrutura de OCR inválida/);
+    expect(() => parseOcrResponse(data)).toThrow(/estrutura de OCR inválida/);
   });
 });

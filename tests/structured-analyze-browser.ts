@@ -3,11 +3,11 @@ import { getDocument } from 'pdfjs-dist';
 import { analyzePdf, rebuildDocument } from '../src/structured-analyze';
 import { blockText } from '../src/structured-document';
 import { validateStructuredSource } from '../src/structured-export';
-import type { OcrBlock, OcrResult } from '../src/ocr-contract';
+import { OCR_ENGINE, type OcrBlock, type OcrResult } from '../src/ocr-contract';
 
 const result = document.querySelector<HTMLElement>('#result')!;
 const checks: string[] = [];
-const options = { ocrConfigured: true, code: 'fixture-access', ocrModel: 'mistral-ocr-latest' };
+const options = { ocrConfigured: true, code: 'fixture-access', ocrModel: OCR_ENGINE };
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message); }
 async function rejects(action: () => Promise<unknown>, expected: RegExp) {
   try { await action(); } catch (error) { assert(error instanceof Error && expected.test(error.message), String(error)); return; }
@@ -17,24 +17,24 @@ const region = (type: string, x: number, y: number, width: number, height: numbe
   ({ type, x, y, width, height, content, confidence: type === 'image' ? null : 98 });
 function response(page: number): OcrResult {
   const blocks = page === 2 ? [
-    region('text', 40, 50, 220, 90, 'Mistral left column begins and finishes before the right column.'),
+    region('text', 40, 50, 220, 90, 'OCR left column begins and finishes before the right column.'),
     region('image', 40, 340, 220, 140, ''),
     region('caption', 40, 485, 220, 25, 'Figure 1. Original experimental graph.'),
-    region('text', 330, 50, 220, 90, 'Mistral right column follows every region of the left column.'),
+    region('text', 330, 50, 220, 90, 'OCR right column follows every region of the left column.'),
     region('table', 330, 540, 200, 140, '| A | B |'),
     region('equation', 330, 400, 200, 50, '$$E = mc^2$$'),
   ] : page === 3 ? [region('title', 40, 60, 300, 25, 'Short OCR title')] : [
-    region('title', 40, 60, 520, 25, `Mistral authoritative page ${page}`),
+    region('title', 40, 60, 520, 25, `OCR authoritative page ${page}`),
     region('text', 40, 110, 520, 70, `Recognized source for page ${page}. Native PDF text is not used as an alternate extraction engine.`),
   ];
-  return { model: 'mistral-ocr-4-1', usage: { pages: 1 }, page: { width: 600, height: 780, confidence: 98, blocks } };
+  return { model: OCR_ENGINE, usage: { pages: 1 }, page: { width: 600, height: 780, confidence: 98, blocks } };
 }
 async function nativeFixture(count: number) {
   const pdf = await PDFDocument.create(), font = await pdf.embedFont(StandardFonts.Helvetica);
   for (let number = 1; number <= count; number++) {
     const page = pdf.addPage([600, 780]);
     page.drawText(`LOCAL-PAGE-${number}`, { x: 40, y: 710, size: 14, font });
-    page.drawText('LOCAL ONLY selectable prose must not bypass mandatory Mistral extraction.', { x: 40, y: 680, size: 10, font });
+    page.drawText('LOCAL ONLY selectable prose must not bypass mandatory OCR.', { x: 40, y: 680, size: 10, font });
     if (number === 2) {
       page.drawRectangle({ x: 40, y: 300, width: 220, height: 140, borderWidth: 1 });
       page.drawLine({ start: { x: 60, y: 320 }, end: { x: 235, y: 420 }, thickness: 3 });
@@ -80,7 +80,7 @@ try {
   const oversized = await fileFor(lateSize, 'oversized-last-page.pdf');
   await rejects(() => analyzePdf(oversized, () => {}, undefined, options), /dimensões/);
   const source = await fileFor(await nativeFixture(3), 'universal-ocr.pdf');
-  await rejects(() => analyzePdf(source, () => {}, undefined, { ...options, ocrConfigured: false }), /Mistral|OCR/);
+  await rejects(() => analyzePdf(source, () => {}, undefined, { ...options, ocrConfigured: false }), /serviço de reconhecimento de texto/);
   assert(calls.length === 0, 'A pré-validação deve terminar antes de qualquer chamada OCR.');
   checks.push('7 MB, assinatura, 50 páginas, rotação e dimensões de todas as páginas: validados antes de enviar.');
 
@@ -92,17 +92,17 @@ try {
   assert(JSON.stringify(rebuilt.blocks.find(block => block.id === nativeAppearance.id)?.appearance) === JSON.stringify(nativeAppearance.appearance), 'Reconstruir recortes perdeu a tipografia nativa.');
   assert(rebuilt.blocks.find(block => block.id === nativeAppearance.id)?.sourceRole === nativeAppearance.sourceRole, 'Reconstruir recortes perdeu o papel original do bloco.');
   const text = analyzed.blocks.map(blockText).join('\n');
-  assert(text.includes('Mistral authoritative page 1') && !/LOCAL-PAGE|LOCAL ONLY/.test(text), 'O texto local sobrepôs a resposta Mistral.');
+  assert(text.includes('OCR authoritative page 1') && !/LOCAL-PAGE|LOCAL ONLY/.test(text), 'O texto local sobrepôs a resposta do OCR.');
   assert(analyzed.blocks.some(block => blockText(block) === 'Short OCR title'), 'Texto OCR curto foi omitido ou convertido em imagem.');
   const second = analyzed.blocks.filter(block => block.page === 2);
-  assert(second.findIndex(block => blockText(block).startsWith('Mistral left')) < second.findIndex(block => blockText(block).startsWith('Mistral right')), 'Ordem Mistral das colunas foi alterada.');
+  assert(second.findIndex(block => blockText(block).startsWith('OCR left')) < second.findIndex(block => blockText(block).startsWith('OCR right')), 'Ordem do OCR das colunas foi alterada.');
   assert(second.find(block => block.kind === 'figure')?.captionId === 'p2-ocr-2', 'Legenda reconhecida não foi associada.');
   assert(analyzed.assets.map(asset => asset.kind).sort().join(',') === 'equation-block,figure,table', 'Regiões visuais reconhecidas não foram preservadas.');
   for (const asset of analyzed.assets) {
     assert(asset.png.length > 100 && asset.rect.x >= 0 && asset.rect.y >= 0, `Recorte inválido: ${asset.id}`);
   }
   await validateStructuredSource(analyzed);
-  checks.push('Todas as páginas nativas usam exclusivamente blocos Mistral; título curto, colunas, figura, tabela, equação e legenda preservados.');
+  checks.push('Todas as páginas nativas usam exclusivamente blocos do OCR; título curto, colunas, figura, tabela, equação e legenda preservados.');
 
   await analyzePdf(source, () => {}, undefined, options);
   assert(Number(calls.length) === 3, 'Reanalisar repetiu chamadas OCR já concluídas na sessão.');
@@ -122,7 +122,7 @@ try {
   const failed = await analyzePdf(await fileFor(await nativeFixture(1), 'failed-native.pdf'), () => {}, undefined, options);
   assert(failed.issues.some(issue => issue.id === 'ocr-failed-1' && issue.severity === 'blocking'), 'Falha OCR nativa não bloqueou confirmação.');
   assert(!failed.blocks.some(block => /LOCAL-PAGE|LOCAL ONLY/.test(blockText(block))), 'Falha OCR resultou em fallback local.');
-  checks.push('Falha da Mistral em PDF selecionável bloqueia a análise sem usar texto nativo como alternativa.');
+  checks.push('Falha do OCR em PDF selecionável bloqueia a análise sem usar texto nativo como alternativa.');
   result.dataset.status = 'passed'; result.textContent = checks.map(check => 'OK: ' + check).join('\n');
 } catch (error) {
   result.dataset.status = 'failed'; result.textContent = `${checks.join('\n')}\nFALHA: ${error instanceof Error ? error.stack : String(error)}`;

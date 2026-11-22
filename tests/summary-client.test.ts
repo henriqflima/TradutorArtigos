@@ -3,7 +3,7 @@ import {
   batchSummarySources, composeSummary, formatSummary, sourcesFromOcr, updateSummarySource,
 } from '../src/summary-client';
 import { SUMMARY_VERSION, type SummarySession, type SummarySource } from '../src/summary-contract';
-import type { OcrResult } from '../src/ocr-contract';
+import { OCR_ENGINE, type OcrResult } from '../src/ocr-contract';
 
 function source(id = 'p1-b1', page = 1, text = 'The mean was 1.23 ± 0.04 mg L⁻¹; n = 30; p = 0.08.'): SummarySource {
   return { id, page, kind: 'text', text, originalText: text, confidence: 98,
@@ -19,7 +19,7 @@ function session(): SummarySession {
     sections: {}, comments: [] };
 }
 function ocr(blocks: OcrResult['page']['blocks']): OcrResult {
-  return { model: 'mistral-ocr-test', page: { width: 600, height: 800, confidence: 98, blocks }, usage: { pages: 1 } };
+  return { model: OCR_ENGINE, page: { width: 600, height: 800, confidence: 98, blocks }, usage: { pages: 1 } };
 }
 const block = (type: string, content: string): OcrResult['page']['blocks'][number] => ({
   type, content, x: 20, y: 40, width: 400, height: 100, confidence: 98,

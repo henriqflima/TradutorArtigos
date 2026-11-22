@@ -1,25 +1,6 @@
-import { env, HttpError, readBounded } from './http.js';
+import { HttpError, readBounded, requireProcessingService } from './http.js';
 
 export const SUMMARY_PROMPT_VERSION = 'scientific-summary-v2';
-export function summaryModel() {
-  const model = env('SUMMARY_MODEL') || 'gpt-6.1-terra';
-  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,100}$/.test(model)) throw new HttpError(503, 'O modelo de resumo configurado é inválido.');
-  return model;
-}
-
-/** Summary authorization deliberately has no dependency on translation configuration. */
-export function authorizeSummary(req: Request, provider: 'openai' | 'mistral' = 'openai') {
-  if (req.method !== 'POST') throw new HttpError(405, 'Método não permitido.');
-  const origin = req.headers.get('origin');
-  if (origin && origin !== new URL(req.url).origin) throw new HttpError(403, 'Origem não permitida.');
-  const code = env('APP_ACCESS_CODE');
-  if (code && req.headers.get('x-access-code') !== code) throw new HttpError(401, 'O código de acesso está incorreto.');
-  if (!env(provider === 'mistral' ? 'MISTRAL_API_KEY' : 'OPENAI_API_KEY')) {
-    throw new HttpError(503, provider === 'mistral'
-      ? 'Configure a chave Mistral para extrair os artigos do resumo.'
-      : 'Configure a chave OpenAI para analisar as evidências e gerar resumos.');
-  }
-}
 
 export async function summaryInput(req: Request, fields: readonly string[], maxBytes: number): Promise<Record<string, unknown>> {
   if (req.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') {
@@ -59,6 +40,7 @@ type ResponseOptions = {
 
 /** The deadline covers both provider headers and body. Provider prose never reaches clients/logs. */
 export async function summaryResponse(options: ResponseOptions, signal: AbortSignal): Promise<{ data: unknown; citedUrls: Set<string>; searched: boolean }> {
+  const { key, model, url } = requireProcessingService('summary');
   const deadline = AbortSignal.timeout(50_000);
   const upstreamSignal = AbortSignal.any([signal, deadline]);
   const transportError = () => new HttpError(signal.aborted ? 499 : deadline.aborted ? 504 : 502,
@@ -68,11 +50,11 @@ export async function summaryResponse(options: ResponseOptions, signal: AbortSig
   if (options.image) content.push({ type: 'input_image', image_url: options.image, detail: 'high' });
   let response: Response;
   try {
-    response = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST', signal: upstreamSignal,
-      headers: { Authorization: `Bearer ${env('OPENAI_API_KEY')}`, 'Content-Type': 'application/json' },
+    response = await fetch(url, {
+      method: 'POST', signal: upstreamSignal, redirect: 'error',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: summaryModel(), store: false, reasoning: { effort: 'low' }, max_output_tokens: 12_000,
+        model, store: false, reasoning: { effort: 'low' }, max_output_tokens: 12_000,
         instructions: options.instructions, input: [{ role: 'user', content }],
         text: { format: { type: 'json_schema', name: options.name, strict: true, schema: options.schema } },
         metadata: { summary_prompt_version: SUMMARY_PROMPT_VERSION },

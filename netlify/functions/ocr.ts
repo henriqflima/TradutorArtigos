@@ -2,11 +2,11 @@ import type { Config } from '@netlify/functions';
 import { PDFDocument } from 'pdf-lib';
 import { MAX_OCR_REQUEST_BYTES } from '../../src/ocr-contract.js';
 import { authorize, failure, HttpError, json, readBounded } from './_shared/http.js';
-import { recognizePdf } from './_shared/mistral.js';
+import { recognizePdf } from './_shared/ocr-service.js';
 
 export default async (req: Request) => {
   try {
-    authorize(req, 'mistral');
+    authorize(req, 'ocr');
     if (req.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/pdf') {
       throw new HttpError(415, 'Envie uma página em PDF para reconhecimento.');
     }
@@ -25,7 +25,7 @@ export default async (req: Request) => {
     // Unexpected orientation or aspect ratio would place source crops over the
     // wrong content. Refuse rather than silently scale an incompatible page.
     if (Math.abs((result.page.width / result.page.height) / (width / height) - 1) > 0.03) {
-      throw new HttpError(502, 'A Mistral retornou dimensões incompatíveis com a página original. Confira a rotação do PDF.');
+      throw new HttpError(502, 'O serviço de OCR retornou dimensões incompatíveis com a página original. Confira a rotação do PDF.');
     }
     return json(result);
   } catch (error) { return failure(error); }

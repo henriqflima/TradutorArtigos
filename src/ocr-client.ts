@@ -1,7 +1,7 @@
 import { degrees, PDFDocument, PDFName, PDFNumber } from 'pdf-lib';
 import { abortIfNeeded } from './structured-document';
 import { MAX_FILE_BYTES, MAX_PDF_PAGES, formatFileSize } from './shared';
-import { MAX_OCR_BLOCKS, MAX_OCR_REQUEST_BYTES, MAX_OCR_RESPONSE_BYTES, OCR_MODEL, type OcrBlock, type OcrResult } from './ocr-contract';
+import { MAX_OCR_BLOCKS, MAX_OCR_REQUEST_BYTES, MAX_OCR_RESPONSE_BYTES, OCR_ENGINE, type OcrBlock, type OcrResult } from './ocr-contract';
 
 export type OcrOptions = { code?: string; ocrConfigured?: boolean; ocrModel?: string };
 
@@ -39,7 +39,7 @@ function confidence(value: unknown): number | null { return value === null ? nul
 
 export function validateOcrResult(value: unknown): OcrResult {
   const result = record(value), page = record(result.page), usage = record(result.usage);
-  if (typeof result.model !== 'string' || !/^mistral-ocr-[a-zA-Z0-9._:-]{1,180}$/.test(result.model) ||
+  if (result.model !== OCR_ENGINE ||
       usage.pages !== 1 || !Array.isArray(page.blocks) || page.blocks.length > MAX_OCR_BLOCKS) return invalid();
   const width = finite(page.width, 1, 100_000), height = finite(page.height, 1, 100_000);
   let characters = 0;
@@ -252,21 +252,21 @@ function subscribe(entry: Entry, session: Session, key: string, signal: AbortSig
   });
 }
 
-export function createMistralOcr(file: File, options: OcrOptions, onProgress: (message: string) => void, signal?: AbortSignal) {
+export function createOcrClient(file: File, options: OcrOptions, onProgress: (message: string) => void, signal?: AbortSignal) {
   const lifecycle = new AbortController();
   const cancel = () => lifecycle.abort();
   signal?.addEventListener('abort', cancel, { once: true });
   if (signal?.aborted) cancel();
   const code = options.code?.trim() || '';
-  const model = options.ocrModel || OCR_MODEL;
+  const model = options.ocrModel || OCR_ENGINE;
   return {
     async recognize(pageNumber: number): Promise<OcrResult> {
       abortIfNeeded(lifecycle.signal);
       if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > MAX_PDF_PAGES) throw new OcrClientError('A página solicitada para OCR é inválida.');
-      if (options.ocrConfigured === false) throw new OcrClientError('O reconhecimento da Mistral ainda não foi ativado. Configure MISTRAL_API_KEY no servidor e retome a análise.');
+      if (options.ocrConfigured === false) throw new OcrClientError('O serviço de reconhecimento de texto ainda não foi configurado. Retome a análise quando ele estiver disponível.');
       const session = sessionFor(file), key = JSON.stringify([pageNumber, model, code]);
       let entry = session.entries.get(key);
-      onProgress(`OCR Mistral: reconhecendo a página ${pageNumber}…`);
+      onProgress(`Reconhecendo o texto da página ${pageNumber}…`);
       if (!entry || entry.controller.signal.aborted) {
         entry = { controller: new AbortController(), promise: undefined as unknown as Promise<OcrResult>, subscribers: 0, settled: false, started: false };
         const created = entry;

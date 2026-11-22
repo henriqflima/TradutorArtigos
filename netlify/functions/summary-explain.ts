@@ -1,7 +1,7 @@
 import type { Config } from '@netlify/functions';
 import { parseSummaryComments } from '../../src/summary-contract.js';
-import { failure, HttpError, json } from './_shared/http.js';
-import { authorizeSummary, boundedString, objectSchema, safeWebUrl, stringList, summaryInput, summaryResponse } from './_shared/summary-openai.js';
+import { authorize, failure, HttpError, json } from './_shared/http.js';
+import { boundedString, objectSchema, safeWebUrl, stringList, summaryInput, summaryResponse } from './_shared/summary-service.js';
 
 const schema = objectSchema({ comments: { type: 'array', items: objectSchema({ concept: { type: 'string' }, explanation: { type: 'string' },
   sources: { type: 'array', items: objectSchema({ title: { type: 'string' }, url: { type: 'string' } }) } }) } });
@@ -14,7 +14,7 @@ Do not infer anything about an article from these concepts or create article-spe
 
 export default async (req: Request) => {
   try {
-    authorizeSummary(req);
+    authorize(req, 'summary');
     const input = await summaryInput(req, ['concepts', 'language'], 5_000);
     if (!stringList(input.concepts, 3, 300) || !input.concepts.length || !boundedString(input.language, 80) ||
         new Set(input.concepts).size !== input.concepts.length) throw new HttpError(400, 'Envie até três conceitos distintos e um idioma válido.');

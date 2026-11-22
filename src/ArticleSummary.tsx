@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, ArrowRight, BookOpen, Check, ChevronLeft, ChevronRight, Clipboard, Download, FileText, LoaderCircle, Save, ScanLine, ShieldCheck, Upload, X } from 'lucide-react';
 import { composeSummary, extractSummary, formatSummary, updateSummarySource } from './summary-client';
-import { SUMMARY_LABELS, SUMMARY_MAX_FILE_BYTES, SUMMARY_MAX_PAGES, SUMMARY_SECTIONS, summaryQuality,
+import { OCR_ENGINE } from './ocr-contract';
+import { SUMMARY_ENGINE, SUMMARY_LABELS, SUMMARY_MAX_FILE_BYTES, SUMMARY_MAX_PAGES, SUMMARY_SECTIONS, summaryQuality,
   type SummaryConfig, type SummaryEvidence, type SummarySession, type SummarySource } from './summary-contract';
 import './summary.css';
 
@@ -54,7 +55,7 @@ export default function ArticleSummary({ hidden = false }: { hidden?: boolean })
       const response = await fetch('/api/summary-config', { cache: 'no-store', signal: abort.signal });
       if (!response.ok) throw new Error();
       const value = await response.json();
-      if (typeof value.configured !== 'boolean' || typeof value.ocrConfigured !== 'boolean' || typeof value.accessRequired !== 'boolean' || typeof value.model !== 'string' || typeof value.ocrModel !== 'string') throw new Error();
+      if (typeof value.configured !== 'boolean' || typeof value.ocrConfigured !== 'boolean' || typeof value.accessRequired !== 'boolean' || value.model !== SUMMARY_ENGINE || value.ocrModel !== OCR_ENGINE) throw new Error();
       if (!abort.signal.aborted) setConfig(value);
     } catch { if (!abort.signal.aborted) { setConfig(null); setConfigError(true); } }
     finally { if (!abort.signal.aborted) setConfigLoading(false); }
@@ -166,14 +167,14 @@ export default function ArticleSummary({ hidden = false }: { hidden?: boolean })
         {config?.accessRequired && <label className="access-label" htmlFor="summary-code">Código de acesso<input id="summary-code" type="password" autoComplete="off" value={code} disabled={Boolean(busy)} onChange={e => setCode(e.target.value)}/></label>}
         {configLoading && <p className="connection-status"><LoaderCircle size={14} className="spin"/>Verificando os serviços de resumo…</p>}
         {configError && <div className="notice" role="alert">Não foi possível verificar os serviços de resumo. <button className="text-button" onClick={() => void loadConfig()}>Tentar novamente</button></div>}
-        {config && (!config.configured || !config.ocrConfigured) && <div className="notice" role="alert">{!config.ocrConfigured ? 'Configure a Mistral para extrair os dados do artigo.' : 'Configure a OpenAI para analisar as evidências e gerar o resumo.'} <button className="text-button" onClick={() => void loadConfig()}>Verificar novamente</button></div>}
+        {config && (!config.configured || !config.ocrConfigured) && <div className="notice" role="alert">{!config.ocrConfigured ? 'O serviço de reconhecimento de texto precisa ser configurado para extrair os dados do artigo.' : 'O serviço de análise precisa ser configurado para conferir as evidências e gerar o resumo.'} <button className="text-button" onClick={() => void loadConfig()}>Verificar novamente</button></div>}
         <button className="primary-button" disabled={!file || !configured || Boolean(busy)} onClick={() => void run('extracting')}><ScanLine size={19}/><span>{session ? session.pages.some(p => p.status !== 'analyzed') ? 'Atualizar / retomar extração' : 'Conferir extração novamente' : 'Extrair dados do artigo'}</span><ArrowRight size={19}/></button>
         <p className="summary-hint">A extração preserva texto, tabelas, figuras e equações, com identificação da página de origem.</p>
       </section>
       <aside className="summary-guide">
         <div className="eyebrow">DO DADO À EXPLICAÇÃO</div><h2>Entenda o que<br/>a pesquisa encontrou.</h2>
         <ol><li><strong>Extraia as evidências</strong><p>O OCR lê todas as páginas. Elementos visuais recebem leitura complementar quando necessário.</p></li><li><strong>Confira o conteúdo</strong><p>Inspecione dados, valores, unidades e pendências. Correções atualizam as evidências.</p></li><li><strong>Gere as quatro partes</strong><p>Objetivo, base técnica, metodologia e resultados com as conclusões dos autores.</p></li></ol>
-        <details className="summary-privacy"><summary><ShieldCheck size={16}/>Processamento e privacidade</summary><p>As páginas do PDF são enviadas à Mistral para OCR. O texto e uma imagem de cada página são enviados à OpenAI para conferir as evidências. Os envios passam pela infraestrutura de hospedagem do aplicativo. Há cobrança pelos provedores.</p><p>A pesquisa complementar usa conceitos da base técnica e apresenta as fontes consultadas. As chaves ficam no servidor. Os provedores aplicam suas políticas de retenção. O aplicativo mantém o progresso somente na memória desta página.</p><p>Recarregar ou fechar esta página descarta os dados. Interromper impede novas etapas. Solicitações já aceitas podem continuar e gerar cobrança.</p></details>
+        <details className="summary-privacy"><summary><ShieldCheck size={16}/>Processamento e privacidade</summary><p>As páginas do PDF são enviadas a um serviço externo de OCR. O serviço de análise recebe o texto e uma imagem de cada página para conferir as evidências. Os envios passam pela infraestrutura de hospedagem do aplicativo. Há cobrança pelos provedores.</p><p>A pesquisa complementar usa conceitos da base técnica e apresenta as fontes consultadas. As chaves ficam no servidor. Os provedores aplicam suas políticas de retenção. O aplicativo mantém o progresso somente na memória desta página.</p><p>Recarregar ou fechar esta página descarta os dados. Interromper impede novas etapas. Solicitações já aceitas podem continuar e gerar cobrança.</p></details>
       </aside>
     </div>
     <div className="summary-status" role="status" aria-live="polite">{busy ? <LoaderCircle size={18} className="spin"/> : <ScanLine size={18}/>}<span>{status}</span>{busy && <button className="summary-small-button" onClick={stop}>Interromper</button>}</div>

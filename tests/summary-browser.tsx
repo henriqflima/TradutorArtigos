@@ -2,9 +2,9 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import App from '../src/App';
-import { TRANSLATION_MODEL } from '../src/shared';
-import type { OcrResult } from '../src/ocr-contract';
-import type { SummaryEvidence, SummarySource } from '../src/summary-contract';
+import { TRANSLATION_ENGINE } from '../src/shared';
+import { OCR_ENGINE, type OcrResult } from '../src/ocr-contract';
+import { SUMMARY_ENGINE, type SummaryEvidence, type SummarySource } from '../src/summary-contract';
 import '../src/styles.css';
 import '../src/plain-text.css';
 
@@ -15,7 +15,7 @@ const fixtureText = [
   ['Objective and methods', 'We compared two concentrations using n = 30 samples in each group.', 'The measurements used a spectrometer calibrated at 20 degrees C.'],
   ['Results and conclusions', 'The measured mean was 1.230 +/- 0.040 mg/L; p = 0.08.', 'The authors concluded the observed difference was not statistically significant.'],
 ];
-const recognition = (number: number): OcrResult => ({ model: 'mistral-ocr-fixture', usage: { pages: 1 }, page: {
+const recognition = (number: number): OcrResult => ({ model: OCR_ENGINE, usage: { pages: 1 }, page: {
   width: 600, height: 800, confidence: 99,
   blocks: [
     ...fixtureText[number - 1].map((content, index) => ({ type: index === 0 ? 'title' : 'text', content,
@@ -40,10 +40,10 @@ window.fetch = async (input, init) => {
   const url = new URL(input instanceof Request ? input.url : String(input), location.href);
   if (!url.pathname.startsWith('/api/')) return previousFetch(input, init);
   data.requests.push(url.pathname);
-  if (url.pathname === '/api/config') return Response.json({ configured: true, accessRequired: false, provider: 'openai', model: TRANSLATION_MODEL,
-    ocr: { configured: true, provider: 'mistral', model: 'mistral-ocr-fixture' } });
+  if (url.pathname === '/api/config') return Response.json({ configured: true, accessRequired: false, provider: 'translation', model: TRANSLATION_ENGINE,
+    ocr: { configured: true, provider: 'ocr', model: OCR_ENGINE } });
   if (url.pathname === '/api/summary-config') return Response.json({ configured: true, ocrConfigured: true,
-    accessRequired: false, model: 'gpt-6.1-terra', ocrModel: 'mistral-ocr-fixture' });
+    accessRequired: false, model: SUMMARY_ENGINE, ocrModel: OCR_ENGINE });
   if (!url.pathname.startsWith('/api/summary-')) { data.translationCalls++; throw new Error(`O resumo chamou uma API de tradução: ${url.pathname}`); }
   if (url.pathname === '/api/summary-ocr') {
     data.ocrCalls++;

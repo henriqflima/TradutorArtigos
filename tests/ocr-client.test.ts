@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { decodePDFRawStream, degrees, PDFArray, PDFDict, PDFDocument, PDFName, PDFNumber, PDFRawStream, StandardFonts } from 'pdf-lib';
-import { createMistralOcr, validateOcrResult } from '../src/mistral-ocr';
-import { MAX_OCR_REQUEST_BYTES, MAX_OCR_RESPONSE_BYTES, type OcrResult } from '../src/ocr-contract';
+import { createOcrClient, validateOcrResult } from '../src/ocr-client';
+import { OCR_ENGINE, MAX_OCR_REQUEST_BYTES, MAX_OCR_RESPONSE_BYTES, type OcrResult } from '../src/ocr-contract';
 import { MAX_FILE_BYTES, MAX_PDF_PAGES } from '../src/shared';
 
 const { rasterizeMock } = vi.hoisted(() => ({ rasterizeMock: vi.fn() }));
 vi.mock('../src/ocr-page-transport', () => ({ rasterizeOcrPage: rasterizeMock }));
 
 const output = (): OcrResult => ({
-  model: 'mistral-ocr-4-1',
+  model: OCR_ENGINE,
   page: { width: 1200, height: 1600, confidence: 94, blocks: [
     { type: 'text', x: 50, y: 100, width: 500, height: 100, content: 'Scientific evidence.', confidence: 95 },
   ] }, usage: { pages: 1 },
@@ -32,7 +32,7 @@ async function sizedFixture(totalBytes: number) {
   }
   throw new Error('Could not construct the exact-size PDF fixture');
 }
-const client = (file: File, signal?: AbortSignal, code = '') => createMistralOcr(file, { code, ocrConfigured: true }, () => {}, signal);
+const client = (file: File, signal?: AbortSignal, code = '') => createOcrClient(file, { code, ocrConfigured: true }, () => {}, signal);
 function numbers(array: PDFArray) { return array.asArray().map(value => (value as PDFNumber).asNumber()); }
 function content(stream: PDFRawStream) { return new TextDecoder().decode(decodePDFRawStream(stream).decode()); }
 function multiply(a: number[], b: number[]) {
@@ -44,7 +44,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => { rasterizeMock.mockReset(); fetchMock = vi.fn(() => Promise.resolve(Response.json(output()))); vi.stubGlobal('fetch', fetchMock); });
 afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
-describe('Mistral OCR browser client', () => {
+describe('OCR browser client', () => {
   it('extracts only the requested source page and posts binary PDF with access code', async () => {
     const ocr = client(await fixture(), undefined, ' shared-code ');
     expect(fetchMock).not.toHaveBeenCalled();
@@ -128,13 +128,13 @@ describe('Mistral OCR browser client', () => {
     await resumed.close();
   });
 
-  it('keeps caches separate for page, file, model and access code', async () => {
+  it('keeps caches separate for page, file, engine version and access code', async () => {
     const file = await fixture();
     await client(file).recognize(1);
     await client(file).recognize(2);
     await client(await fixture()).recognize(1);
     await client(file, undefined, 'other-code').recognize(1);
-    await createMistralOcr(file, { ocrModel: 'mistral-ocr-4-1' }, () => {}).recognize(1);
+    await createOcrClient(file, { ocrModel: 'ocr-v2' }, () => {}).recognize(1);
     expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
@@ -193,8 +193,8 @@ describe('Mistral OCR browser client', () => {
 
   it('rejects unavailable configuration, invalid page and already cancelled work before sending content', async () => {
     const file = await fixture();
-    const unavailable = createMistralOcr(file, { ocrConfigured: false }, () => {});
-    await expect(unavailable.recognize(1)).rejects.toThrow('MISTRAL_API_KEY');
+    const unavailable = createOcrClient(file, { ocrConfigured: false }, () => {});
+    await expect(unavailable.recognize(1)).rejects.toThrow('serviço de reconhecimento de texto');
     await expect(client(file).recognize(0)).rejects.toThrow('inválida');
     await expect(client(file).recognize(3)).rejects.toThrow('não existe');
     const abort = new AbortController(); abort.abort();

@@ -1,5 +1,5 @@
 /** Public OCR contract. Coordinates use the returned page dimensions; confidence is 0–100. */
-export const OCR_MODEL = 'mistral-ocr-latest';
+export const OCR_ENGINE = 'ocr-v1';
 // Per-page transport stays below Netlify's binary request limit; the input file has its own 7 MB limit.
 export const MAX_OCR_REQUEST_BYTES = 4_000_000;
 export const MAX_OCR_RESPONSE_BYTES = 2_000_000;
