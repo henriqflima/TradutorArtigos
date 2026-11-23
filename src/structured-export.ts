@@ -1,4 +1,5 @@
 import { renderStructuredPdf } from './pdf-renderer';
+import { captionAboveVisual } from './caption-links';
 import type { PdfLayoutReport } from './pdf-layout';
 import JSZip from 'jszip';
 import { splitMathRuns } from './inline-math';
@@ -170,12 +171,14 @@ export async function createStructuredDocx(translated: TranslatedDocument, onPro
     if (ready.captions.has(block.id)) continue;
     if (!isVisual(block)) { body.push(paragraph(block)); continue; }
     const caption = block.captionId ? translated.document.blocks.find(value => value.id === block.captionId)! : undefined;
+    const captionAbove = Boolean(caption && captionAboveVisual(caption, block));
     // Reserve enough room for the complete caption; Word keeps the two paragraphs together.
     const captionLength = caption ? ready.runs.get(caption.id)!.map(run => run.type === 'text' ? run.text : ' ').join('').length : 0;
     const captionHeight = caption ? Math.ceil(captionLength / 82) * 14 + 20 : 0;
     if (captionHeight > HEIGHT / 2) throw new Error(`A legenda ${caption!.id} é longa demais para acompanhar a figura numa página.`);
-    body.push(`<w:p><w:pPr><w:jc w:val="center"/><w:keepLines/>${caption ? '<w:keepNext/>' : ''}<w:spacing w:before="100" w:after="100" w:line="240" w:lineRule="auto"/></w:pPr>${bookmark(block.id, image(ready.assets.get(block.assetId!)!, HEIGHT - captionHeight - 20))}</w:p>`);
-    if (caption) body.push(paragraph(caption));
+    if (caption && captionAbove) body.push(paragraph(caption, true));
+    body.push(`<w:p><w:pPr><w:jc w:val="center"/><w:keepLines/>${caption && !captionAbove ? '<w:keepNext/>' : ''}<w:spacing w:before="100" w:after="100" w:line="240" w:lineRule="auto"/></w:pPr>${bookmark(block.id, image(ready.assets.get(block.assetId!)!, HEIGHT - captionHeight - 20))}</w:p>`);
+    if (caption && !captionAbove) body.push(paragraph(caption));
   }
   onProgress('Montando o Word com os elementos preservados…');
   const namespaces = `xmlns:w="${W}" xmlns:r="${R}" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"`;

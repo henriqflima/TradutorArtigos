@@ -1,5 +1,6 @@
 import type { OcrResult } from './ocr-contract';
 import { splitInlineMath } from './inline-math';
+import { associateCaptions } from './caption-links';
 import type { ContentRun, DocumentAsset, DocumentBlock, DocumentIssue, SourceRect } from './structured-document';
 
 export type OcrRegion = { index: number; type: string; rect: SourceRect; text: string; confidence: number | null };
@@ -109,7 +110,7 @@ export function blocksFromOcr(layout: OcrLayout, page: number, assets: readonly 
     if (hasUnprotectedOcrMath(remainingText)) {
       issues.push(ocrMathWarning(page, id));
     }
-    blocks.push({ order: region.index, block: { id, page, rect: { ...region.rect }, geometry: 'block', originalText: region.text,
+    blocks.push({ order: region.index, block: { id, page, rect: { ...region.rect }, geometry: 'block', originalText: region.text, sourceRole: region.type,
       kind: region.type === 'title' ? 'heading' : region.type === 'caption' ? 'caption' : 'paragraph',
       runs, fontSize: region.type === 'title' ? 14 : region.type === 'caption' ? 9 : 10 } });
   }
@@ -126,5 +127,15 @@ export function blocksFromOcr(layout: OcrLayout, page: number, assets: readonly 
     const after = closest && asset.rect.y > closest.rect.y ? 0.5 : -0.5;
     blocks.push({ block: assetBlock(asset), order: closest ? closest.index + after : 0 });
   }
-  return { blocks: blocks.sort((a, b) => a.order - b.order).map(entry => entry.block), issues };
+  const ordered = blocks.sort((a, b) => a.order - b.order).map(entry => entry.block);
+  const links = associateCaptions(ordered), linkedCaptions = new Set(links.values());
+  for (const block of ordered) {
+    const captionId = links.get(block.id);
+    if (captionId) block.captionId = captionId;
+    if (block.kind === 'paragraph' && linkedCaptions.has(block.id)) {
+      block.kind = 'caption';
+      block.fontSize = 9;
+    }
+  }
+  return { blocks: ordered, issues };
 }

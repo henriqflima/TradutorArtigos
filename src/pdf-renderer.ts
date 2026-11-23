@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont } from 'pdf-lib';
+import { captionAboveVisual } from './caption-links';
 import regularFontUrl from './fonts/NotoSerif-Regular.ttf?url';
 import boldFontUrl from './fonts/NotoSerif-Bold.ttf?url';
 import italicFontUrl from './fonts/NotoSerif-Italic.ttf?url';
@@ -201,7 +202,7 @@ export async function renderStructuredPdf(translated: TranslatedDocument, ready:
             const asset = ready.assets.get(block.assetId!)!, captionLayout = caption ? textLayout(caption, width) : undefined;
             const captionHeight = captionLayout ? lineHeight(captionLayout) : 0;
             if (captionHeight > maxHeight * .6) throw new Error(`A legenda ${caption!.id} é longa demais para acompanhar a figura numa página.`);
-            const captionAbove = Boolean(caption && caption.page === block.page && caption.rect.y < block.rect.y);
+            const captionAbove = Boolean(caption && captionAboveVisual(caption, block));
             const gap = caption ? 6 : 0;
             const scale = Math.min(1, width / asset.widthPt, (maxHeight - captionHeight - gap - 4) / asset.heightPt);
             if (scale <= 0) throw new Error(`A figura ${block.id} não cabe com sua legenda.`);

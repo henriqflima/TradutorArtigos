@@ -75,6 +75,27 @@ describe('structured exports', () => {
     expect(trace.includes('bookmark="lume_block_1" id="f1"')).toBe(true);
     expect(trace.includes('bookmark="lume_block_2" id="c1"')).toBe(true);
   });
+  it('keeps a caption above its drawing on the same Word page', async () => {
+    const input = await fixture();
+    const asset = input.document.assets[0], original = input.document.blocks[0];
+    asset.kind = 'figure';
+    asset.rect = { ...asset.rect, x: 42, y: 100 };
+    const runs = [{ type: 'text' as const, text: 'Figura 1. Legenda acima da figura.' }];
+    input.document.blocks = [
+      { ...original, id: 'figure', kind: 'figure', rect: asset.rect, assetId: asset.id, captionId: 'caption', runs: [] },
+      { ...original, id: 'caption', kind: 'caption', rect: { x: 42, y: 75, width: 100, height: 15 }, runs },
+    ];
+    input.blocks = { caption: runs };
+
+    const zip = await JSZip.loadAsync(await (await createStructuredDocx(input)).arrayBuffer());
+    const text = await zip.file('word/document.xml')!.async('string');
+    const paragraphs = text.match(/<w:p>[\s\S]*?<\/w:p>/g) ?? [];
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[0]).toContain('Figura 1. Legenda acima da figura.');
+    expect(paragraphs[0]).toContain('<w:keepNext/>');
+    expect(paragraphs[1]).toContain('<w:drawing>');
+    expect(text.match(/Figura 1\. Legenda acima da figura\./g)).toHaveLength(1);
+  });
   it('supports cancellation before export', async () => {
     const controller = new AbortController(); controller.abort();
     await expect(createStructuredDocx(await fixture(), undefined, controller.signal)).rejects.toThrow(/cancelada/);

@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { PDFDocument } from 'pdf-lib';
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import type { TextItem } from 'pdfjs-dist/types/src/display/api';
+import { blocksFromOcr, ocrAssetId, ocrBlockId } from '../src/ocr-layout';
 import { createStructuredPdf } from '../src/structured-export';
 import { planPdfLayout, type PdfLayoutItem, type PdfLayoutReport } from '../src/pdf-layout';
-import { sha256, type ContentRun, type DocumentAsset, type DocumentBlock, type SourceRect, type TranslatedDocument } from '../src/structured-document';
+import { blockText, sha256, type ContentRun, type DocumentAsset, type DocumentBlock, type SourceRect, type TranslatedDocument } from '../src/structured-document';
 
 const A4 = { width: 595, height: 842 };
 function text(id: string, value: string, rect: SourceRect, page = 1, kind: DocumentBlock['kind'] = 'paragraph'): DocumentBlock {
@@ -213,6 +214,36 @@ describe('continuous PDF composition with source visual references', () => {
     expect(imagePage).toBeGreaterThanOrEqual(0);
     expect(captionPage).toBe(imagePage);
     expect(pages.flatMap(page => page.images)).toHaveLength(1);
+    expectNoOverlaps(pages);
+  });
+
+  it('moves a numbered OCR text caption with its off-center figure onto a continuation page', async () => {
+    const sourceRegions = columns().map((block, index) => ({ index, rect: block.rect,
+      type: block.kind === 'heading' ? 'title' : 'text', text: blockText(block), confidence: 99 }));
+    const figureIndex = sourceRegions.length, captionIndex = figureIndex + 1;
+    const asset = await pngAsset(ocrAssetId(1, figureIndex), { x: 154, y: 620, width: 110, height: 145 }, 'figure');
+    const recognized = blocksFromOcr({ model: 'ocr-v1', confidence: 99, usableCharacters: 300, lowConfidenceBlocks: 0,
+      regions: [...sourceRegions,
+        { index: figureIndex, type: 'image', rect: asset.rect, text: '', confidence: null },
+        { index: captionIndex, type: 'text', rect: { x: 42, y: 771, width: 238, height: 19 }, text: 'Fig. 1. Typical sheet extrusion system.', confidence: 99 },
+      ] }, 1, [asset]);
+    const captionId = ocrBlockId(1, captionIndex);
+    expect(recognized.blocks.find(block => block.assetId === asset.id)?.captionId).toBe(captionId);
+    expect(recognized.blocks.find(block => block.id === captionId)?.kind).toBe('caption');
+
+    const input = documentFor(recognized.blocks, [asset]);
+    input.blocks[ocrBlockId(1, 1)] = [{ type: 'text', text: 'O texto traduzido ocupa mais linhas na coluna do artigo. '.repeat(160) }];
+    input.blocks[captionId] = [{ type: 'text', text: 'Figura 1. Sistema típico de extrusão de chapas.' }];
+    const pages = await inspect(await createStructuredPdf(input));
+    const imagePage = pages.findIndex(page => page.images.length > 0);
+    expect(imagePage).toBeGreaterThan(0);
+    const page = pages[imagePage], image = page.images[0], caption = itemWith(page.items, 'Figura 1.');
+    expect(caption).toBeDefined();
+    const gapToCaptionBaseline = page.height - caption.transform[5] - image.y - image.height;
+    expect(gapToCaptionBaseline).toBeGreaterThan(0);
+    expect(gapToCaptionBaseline).toBeLessThan(24);
+    expect(pages.flatMap(entry => entry.images)).toHaveLength(1);
+    expect(pages.map(entry => entry.text).join(' ').match(/Figura 1\./g)).toHaveLength(1);
     expectNoOverlaps(pages);
   });
 

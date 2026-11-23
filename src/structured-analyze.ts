@@ -4,7 +4,6 @@ import { MAX_FILE_BYTES, MAX_PDF_PAGES, formatFileSize } from './shared';
 import { createOcrClient, type OcrOptions } from './ocr-client';
 import { layoutFromOcr, blocksFromOcr, isVisualRegion, ocrAssetId, type OcrLayout } from './ocr-layout';
 import { appearanceForBlock, nativeTextSpans, type NativeTextSpan } from './pdf-appearance';
-import { associateCaptions } from './caption-links';
 import { abortIfNeeded, sha256, type DocumentAsset, type DocumentBlock, type DocumentIssue, type SourceRect, type StructuredDocument } from './structured-document';
 
 type SourcePage = { width: number; height: number; ocr?: OcrLayout; appearanceSpans?: NativeTextSpan[] };
@@ -62,17 +61,14 @@ function buildDocument(analysis: Analysis, assets: readonly DocumentAsset[]): St
     const page = analysis.pages[index], number = index + 1;
     if (!page.ocr) continue;
     const result = blocksFromOcr(page.ocr, number, assets.filter(asset => asset.page === number));
-    const roles = new Map(page.ocr.regions.map(region => [`p${number}-ocr-${region.index}`, region.type]));
     for (const block of result.blocks) {
-      block.sourceRole = roles.get(block.id);
       block.appearance = appearanceForBlock(block, page.appearanceSpans || [], page.width);
     }
     issues.push(...result.issues);
-    const links = associateCaptions(result.blocks);
-    for (const figure of result.blocks.filter(block => ['figure', 'table'].includes(block.kind))) {
-      const captionId = links.get(figure.id);
-      if (captionId) figure.captionId = captionId;
-      else issues.push(issue(`caption-${figure.id}`, number, 'Figura/tabela sem legenda associada automaticamente; revise a relação.', 'warning', figure.id));
+    for (const figure of result.blocks) {
+      if ((figure.kind === 'figure' || figure.kind === 'table') && !figure.captionId) {
+        issues.push(issue(`caption-${figure.id}`, number, 'Figura/tabela sem legenda associada automaticamente; revise a relação.', 'warning', figure.id));
+      }
     }
     blocks.push(...result.blocks);
   }
